@@ -198,6 +198,25 @@ class WebTests(unittest.TestCase):
             html = response.read().decode("utf-8")
         self.assertIn("kein Repository zur Überwachung", html)
 
+    def test_many_repositories_can_be_saved(self):
+        extra = [{"full_name": "Touchy28/extra-" + str(i).zfill(3),
+                  "private": False, "description": "", "archived": False}
+                 for i in range(120)]
+        self.github_repos.extend(extra)
+        with urlopen(self.url, timeout=4):
+            pass
+        items = [("csrf", self.server.csrf)]
+        items.extend(("repository", item["full_name"]) for item in extra)
+        data = urlencode(items).encode("utf-8")
+        self.assertGreater(len(data), 2048)
+        req = Request(self.url + "repositories", data=data, method="POST",
+                      headers={"Content-Type": "application/x-www-form-urlencoded"})
+        with urlopen(req, timeout=4) as response:
+            self.assertEqual(response.status, 200)
+        from repo_selection import effective_repositories
+        chosen = effective_repositories({"repositories": [REPO]}, self.root)
+        self.assertEqual(len(chosen), 120)
+
     def test_selection_rejects_repo_not_authorized_by_token(self):
         with urlopen(self.url, timeout=4):
             pass
