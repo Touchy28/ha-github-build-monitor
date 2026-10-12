@@ -17,7 +17,7 @@ from urllib.request import Request, urlopen
 
 from core import (activity_tag, history_key, learn, notify_service, repositories,
                   sensor_id, snapshot, timestamp)
-from forecast import observe, predict
+from forecast import observe, predict, workflow_key
 from learning_store import learning_allowed, reset_history
 from learning_ui import start as start_learning_ui
 
@@ -192,6 +192,11 @@ def is_active(run: dict, now: float | None = None) -> bool:
 def monitor_repository(repo: str, github_token: str, ha_token: str,
                        config: dict, state: dict, history: dict, now: float) -> None:
     recent = runs_for(repo, github_token)
+    # Restore readable names for workflow histories created by v0.1.4.
+    workflow_names = history.setdefault("workflow_names", {})
+    for known_run in recent:
+        if known_run.get("name"):
+            workflow_names[workflow_key(repo, known_run)] = str(known_run["name"])
     relevant = [r for r in recent if is_active(r, now)][:6]
     if not relevant and recent:
         relevant = [recent[0]]
