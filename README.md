@@ -2,7 +2,7 @@
 
 A standalone **read-only GitHub Actions monitor** for Home Assistant with native HA sensors, estimated build progress and iPhone Live Activities / Android Live Updates. No runner registration or Docker socket permissions.
 
-> **Version 0.1.6**. GitHub-hosted Home Assistant app with read-only monitoring, repository picker and compact timing dashboard. Stop the previous local app if you have not already done so.
+> **Version 0.1.7**. GitHub-hosted Home Assistant app with read-only monitoring, repository picker and compact timing dashboard. Stop the previous local app if you have not already done so.
 
 ## Capabilities
 
@@ -51,6 +51,30 @@ For a new installation on Home Assistant OS / Supervisor:
 Die Webansicht vereint Repository-Auswahl, Einstellungen-Übersicht und Lernstatistik. Die Statistik ist von Beginn an eingeklappt: **Repository → Workflow → Gesamtzeiten / Runner / Job → Schrittzeiten**. Jede Ebene lässt sich unabhängig öffnen.
 
 **Einschränkung der Home-Assistant-Oberfläche:** Die native **Konfiguration**-Registerkarte lässt sich von einer App nicht auf ihre eigene Ingress-Webansicht umleiten. Die Tokens und Basisoptionen verbleiben daher in der normalen HA-Konfiguration; die Weboberfläche zeigt deren Status sowie einen Link zurück zur App-Übersicht. Das vermeidet zusätzliche Supervisor-Rechte und hält bestehende Einstellungen kompatibel.
+
+### iPhone-Zielgerät auswählen (ab v0.1.7)
+
+Unter **GitHub Build Monitor → Weboberfläche → Einstellungen** gibt es ein
+Dropdown **Zielgerät für Live-Aktivitäten**. Die App liest mit ihrer vorhandenen
+Home-Assistant-API-Berechtigung die bereits registrierten
+`notify.mobile_app_*`-Dienste aus `GET /api/services` ein.
+Die Liste kann über **Geräte aus Home Assistant neu einlesen**
+aktualisiert werden.
+
+- Die vorhandene Einstellung bleibt erhalten, bis du ein anderes Gerät auswählst.
+- Nach dem Speichern wechselt der Monitor beim nächsten Abfragezyklus; laufende
+  Live-Aktivitäten werden zunächst auf dem **vorherigen** Gerät entfernt.
+- Bei einem Fehler beim Entfernen versucht die App den Wechsel später erneut,
+  statt eine verwaiste Aktivität zu riskieren.
+- Die Dropdown-Auswahl wird in einer eigenen Datei in `/data` gesichert,
+  nicht in die vom Supervisor verwalteten Optionen zurückgeschrieben.
+- Im nativen HA-Konfigurationsformular bleibt das bisherige Eingabefeld aus
+  Kompatibilitätsgründen sichtbar. Die Webauswahl hat Vorrang.
+  Mit **Wert aus HA-App-Konfiguration verwenden** kannst du die Webauswahl
+  wieder zurücknehmen.
+- Voraussetzung: Companion App auf dem gewünschten Gerät registriert und
+  Push-Benachrichtigungen erlaubt. Die Auswahl selbst verschickt noch keine
+  Test-Benachrichtigung.
 
 ### Repository-Auswahl per GitHub-Token (ab v0.1.5)
 
