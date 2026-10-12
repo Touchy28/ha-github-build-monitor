@@ -56,6 +56,15 @@ class HistoryResetTests(unittest.TestCase):
         self.assertTrue(view[0]["workflows"][0]["prognosis_ready"])
         self.assertEqual(view[1]["workflow_samples"], 1)
 
+    def test_v014_history_names_can_be_recovered(self):
+        data = history()
+        key = REPO.casefold() + ":77"
+        for sample in data["forecast"]["workflows"][key]:
+            sample.pop("workflow_name", None)
+        data["workflow_names"] = {key: "Publish Home Assistant app"}
+        rows = learning_store.summary(data, [REPO])
+        self.assertEqual(rows[0]["workflows"][0]["name"], "Publish Home Assistant app")
+
     def test_reset_one_preserves_other_repository(self):
         data = history()
         cutoff = core.timestamp("2026-10-12T06:00:00Z")
