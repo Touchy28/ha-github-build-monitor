@@ -52,10 +52,18 @@ Die Webansicht vereint Repository-Auswahl, Einstellungen-Übersicht und Lernstat
 
 **Einschränkung der Home-Assistant-Oberfläche:** Die native **Konfiguration**-Registerkarte lässt sich von einer App nicht auf ihre eigene Ingress-Webansicht umleiten. Die Tokens und Basisoptionen verbleiben daher in der normalen HA-Konfiguration; die Weboberfläche zeigt deren Status sowie einen Link zurück zur App-Übersicht. Das vermeidet zusätzliche Supervisor-Rechte und hält bestehende Einstellungen kompatibel.
 
+### Eindeutige parallele Live-Aktivitäten (ab v0.2.1)
+
+Jede Live-Aktivität zeigt jetzt **Repository · Workflow #GitHub-Laufnummer · Restzeit**, zum Beispiel **`B&B · CI #1055 · ≈–/5m`** oder nach Abschluss **`B&B · CI #1055 · ✓`**. Parallel laufende Workflows (auch auf verschiedenen HA-/Synology-/NEWMAJOR-Runnern) behalten getrennte Live-Aktivitäten und eindeutige Tags.
+
+Der vorhandene HA-Repository-Sensor zeigt weiterhin genau einen primären Workflow-Run. Für die gleichzeitig laufenden anderen Builds stehen nun `primary_run_id` und `active_run_details` mit eigener Laufnummer, Status, Fortschritt, Runner, Branch und URL in den Attributen. Es werden bis zu sechs parallele Läufe im Detail angezeigt; `active_run_count` zählt alle erkannten aktiven Läufe.
+
+Beim Abschluss wird der Endstatus drei Mal mit mindestens 60 Sekunden Abstand an Home Assistant übertragen und die Aktivität frühestens nach drei Minuten entfernt. Eine erfolgreiche HA-Serviceantwort ist **kein Nachweis der Anzeige auf dem iPhone**; damit wird die Übertragung robuster, nicht garantiert.
+
 ### Restzeit für aktuellen Schritt und gesamten Build (ab v0.2.0)
 
 Die Live-Aktivität zeigt bei ausreichender Datenbasis etwa
-**`B&B · ≈1/12m`**. Dabei bedeutet `1` **verbleibende Minuten im
+**`B&B · CI #1055 · ≈1/12m`**. Dabei bedeutet `1` **verbleibende Minuten im
 aktuell laufenden GitHub-Schritt** und `12` **verbleibende Minuten bis
 zum Abschluss des gesamten Workflows** (einschließlich der typischen
 Wartezeiten auf weitere Jobs/Runner).
@@ -64,7 +72,7 @@ Die Schätzungen basieren auf echten früheren Laufzeiten desselben Schritts
 beziehungsweise Workflows. Für beide Prognosen sind mindestens drei
 passende erfolgreiche historische Messungen erforderlich. Kann ein Wert
 noch nicht zuverlässig berechnet werden, steht an dieser Stelle `–`:
-`B&B · ≈–/12m`. Fehlen beide, erscheint `B&B · Restzeit –`.
+`B&B · CI #1055 · ≈–/12m`. Fehlen beide, erscheint `B&B · CI #1055 · Restzeit –`.
 Es wird **keine vergangene Laufzeit mehr als Restzeit ausgegeben**.
 Bei einem abgeschlossenen Build wechselt die Überschrift zu `✓`
 beziehungsweise einem Fehlerstatus.
@@ -191,13 +199,13 @@ Die normale **Konfiguration** zeigt statische Supervisor-App-Optionen wie Token 
 
 ### Entities
 
-Each repository retains its **v0.1.0 entity ID**, for example **sensor.github_runner_touchy28_more_tents_18b499**. Sensor states retain running/queued/success/failure/cancelled/idle. The original attributes progress, steps_done, steps_total, job, step, runner, eta_seconds, active_runs and url remain available. New attributes include progress_percent, progress_is_estimate, workflow, run_id, run_url, current_job, current_step, completed_steps, total_steps, estimated_remaining_seconds, active_run_count and runner_name.
+Each repository retains its **v0.1.0 entity ID**, for example **sensor.github_runner_touchy28_more_tents_18b499**. Sensor states retain running/queued/success/failure/cancelled/idle. The original attributes progress, steps_done, steps_total, job, step, runner, eta_seconds, active_runs and url remain available. New attributes include progress_percent, progress_is_estimate, workflow, run_id, run_url, current_job, current_step, completed_steps, total_steps, estimated_remaining_seconds, active_run_count and runner_name. Since v0.2.1, `primary_run_id` identifies the run whose state is shown by the sensor, while `active_run_details` contains up to six active runs separately. Existing dashboards remain compatible.
 
 Home Assistant REST-created sensor entities are **not persistent** across an HA restart until the monitor posts them again. They are not Config Entries.
 
 ### iPhone Live Activities
 
-When enabled, notifications use the Companion App live_update setting with a unique tag per run. Updates modify the same activity; after a completed run, the monitor publishes the final result and removes the notification on a subsequent poll. Requires HA Core 2026.7+, iOS 17.2+ and working Companion App push notifications.
+When enabled, notifications use the Companion App live_update setting with a unique tag per run. Updates modify the same activity; after a completed run, the monitor sends the terminal result three times over successive polls (at least 60 seconds apart), then retires it after at least 180 seconds. Submission to Home Assistant cannot prove iOS push delivery. Requires HA Core 2026.7+, iOS 17.2+ and working Companion App push notifications.
 
 ### Known limits
 
