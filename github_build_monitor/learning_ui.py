@@ -15,7 +15,7 @@ from threading import Lock, Thread
 from time import time
 from urllib.parse import parse_qs, urlsplit
 
-from learning_store import reset_description, summary
+from learning_store import reset_description, step_breakdown, summary
 from repo_selection import effective_repositories, store_selection
 from repo_selection_ui import cached_available, get_available, selector_html
 
@@ -62,8 +62,11 @@ small,.muted { color: #52616d }
         padding: 14px 16px; margin: 13px 0 }
 .stats { display: flex; flex-wrap: wrap; gap: 9px; margin: 12px 0 }
 .metric { flex: 1; min-width: 142px; padding: 10px; background: #f0f5f7;
-          border-radius: 10px; min-width: 0 }
+          border-radius: 10px; max-width: 100% }
 .metric b { display: block; font-size: 1.09rem; font-variant-numeric: tabular-nums }
+.workflow-step { padding: 8px 0; border-bottom: 1px solid #e6ebee }
+.workflow-step:last-child { border-bottom: 0 }
+.workflow-step strong,.workflow-step>.muted { display: block; overflow-wrap: anywhere }
 .metric span { display: block; font-size: .81rem; color: #536673 }
 .fold-title,.workflow-title { display: flex; align-items: center;
                              flex-wrap: wrap; gap: 5px 10px }
@@ -219,13 +222,41 @@ def render(data_dir: Path, csrf: str, queued: bool = False,
                 + (runner_text or "Noch kein Runner erfasst")
                 + '</p></div></details>'
             )
+            detail_sections = []
+            for job_data in step_breakdown(history, entry["repository"], item["name"]):
+                step_rows = []
+                for step_data in job_data["steps"]:
+                    step_rows.append(
+                        '<div class="workflow-step">'
+                        f'<strong>{escape(step_data["name"])}</strong>'
+                        f'<span class="muted">{int(step_data["samples"])} Messungen</span>'
+                        '<div class="stats">'
+                        f'<div class="metric"><b>{duration(step_data["median_seconds"])}</b>'
+                        '<span>Typisch</span></div>'
+                        f'<div class="metric"><b>{duration(step_data["min_seconds"])} – '
+                        f'{duration(step_data["max_seconds"])}</b><span>Spannweite</span>'
+                        '</div></div>'
+                    )
+                detail_sections.append(
+                    '<details class="runner-fold"><summary>📂 '
+                    + escape(job_data["job"]) + f' ({len(job_data["steps"])} Schritte)'
+                    '</summary><div class="fold-body">'
+                    + "".join(step_rows) + '</div></details>'
+                )
+            steps_html = (
+                '<details class="time-fold"><summary>🔎 Gelernte Schrittzeiten'
+                f' ({sum(len(j["steps"]) for j in step_breakdown(history, entry["repository"], item["name"]))})'
+                '</summary><div class="fold-body">'
+                + "".join(detail_sections)
+                + '</div></details>'
+            ) if detail_sections else ''
             workflow_parts.append(
                 '<details class="workflow-fold">'
                 '<summary class="workflow-title">'
                 f'<span>{escape(item["name"])}</span>'
                 f'<span class="fold-count">{int(item["runs"])} Läufe</span></summary>'
                 f'<div class="fold-body"><p class="muted">{escape(ready)}</p>'
-                + time_values + runner_details + '</div></details>'
+                + time_values + steps_html + runner_details + '</div></details>'
             )
         if not workflow_parts:
             workflow_parts.append(
