@@ -18,6 +18,9 @@ from urllib.parse import parse_qs, urlsplit
 from learning_store import reset_description, step_breakdown, summary
 from repo_selection import effective_repositories, store_selection
 from repo_selection_ui import cached_available, get_available, selector_html
+from mobile_notify import clear_service, effective_service, save_service, selection_file
+from mobile_notify_ui import (cached_services, get_services,
+                              selector_html as mobile_selector_html)
 
 
 def read_json(path: Path) -> dict:
@@ -106,6 +109,17 @@ button.neutral { background: #30576b }
 .note { padding: 13px; border-radius: 10px; background: #e4f4f0; color: #154a40 }
 .empty { padding: 9px 0; color: #64737d }
 code { font-size: .87em; overflow-wrap: anywhere }
+.notify-picker { margin: 18px 0; padding: 12px; border: 1px solid #dce4e9;
+                 border-radius: 12px }
+.notify-picker select { width: 100%; min-width: 0; min-height: 46px; font: inherit;
+                        border-radius: 9px; border: 1px solid #aab8c3;
+                        padding: 10px; background: #fff; color: #152b39 }
+.notify-picker label { display: block; margin-bottom: 8px }
+.picker-buttons { margin: 12px 0 0 }
+@media (prefers-color-scheme: dark) {
+ .notify-picker select { background: #202b31; color: #f2f6f7; border-color: #546875 }
+ .notify-picker { border-color: #40515b }
+}
 @media (prefers-color-scheme: dark) {
  body { background: #11171c; color: #f2f6f7 }
  .card,.back-link,.topnav a { background: #202b31; border-color: #36444c }
@@ -152,19 +166,19 @@ GITHUB_PATH = (
 )
 
 
-def settings_panel(data_dir: Path) -> str:
+def settings_panel(data_dir: Path, mobile_html: str = "", expand: bool = False) -> str:
     """Read-only overview: Supervisor owns token and native options."""
     settings = read_json(data_dir / "options.json")
     token_status = "Hinterlegt" if settings.get("github_api_token") else "Nicht hinterlegt"
     enabled = "Aktiviert" if settings.get("live_activity_enabled") else "Deaktiviert"
-    service = escape(str(settings.get("live_activity_notify_service") or "Nicht eingestellt"))
+    service = escape(effective_service(settings, data_dir) or "Nicht eingestellt")
     polling = settings.get("poll_interval_seconds", 60)
     try:
         interval = max(30, min(300, int(polling)))
     except (ValueError, TypeError):
         interval = 60
     return (
-        '<details class="card" id="settings">'
+        '<details class="card" id="settings"' + (' open' if expand else '') + '>'
         '<summary class="fold-title"><span>⚙️ Einstellungen</span>'
         '<span class="fold-count">Übersicht</span></summary><div class="fold-body">'
         '<p class="muted">Überwachung, Lernzeiten und Repository-Auswahl verwaltest du '
@@ -176,7 +190,8 @@ def settings_panel(data_dir: Path) -> str:
         f'<div class="metric"><b>{enabled}</b><span>iPhone-Live-Aktivitäten</span></div>'
         '</div>'
         f'<p class="muted">Benachrichtigungsdienst: <code>{service}</code></p>'
-        '<p><a class="back-link" href="/hassio" target="_top" rel="noopener noreferrer">'
+        + mobile_html
+        + '<p><a class="back-link" href="/hassio" target="_top" rel="noopener noreferrer">'
         'Zur HA-App-Konfiguration ↗</a></p>'
         '<p class="muted"><small>Die native Home-Assistant-Registerkarte „Konfiguration“ '
         'kann eine App technisch nicht umleiten. Klicke in der App-Übersicht auf '
@@ -186,7 +201,8 @@ def settings_panel(data_dir: Path) -> str:
 
 
 def render(data_dir: Path, csrf: str, queued: bool = False,
-           repositories_html: str = "") -> bytes:
+           repositories_html: str = "", mobile_html: str = "",
+           expand_settings: bool = False) -> bytes:
     history = read_json(data_dir / "monitor_history.json")
     configured = effective_repositories(read_json(data_dir / "options.json"), data_dir)
     records = summary(history, configured)
@@ -317,7 +333,7 @@ def render(data_dir: Path, csrf: str, queued: bool = False,
         '<a href="#repositories">Repositories</a>'
         '<a href="#settings">Einstellungen</a>'
         '<a href="#learning">Lernstatistik</a></nav>'
-        + notification + repositories_html + settings_panel(data_dir)
+        + notification + repositories_html + settings_panel(data_dir, mobile_html, expand_settings)
         + '<section id="learning" class="learning-intro"><h2>⏱ Lernstatistik</h2>'
         '<p class="muted">Tippe auf ein Repository, dann auf einen Workflow. '
         'Zeitwerte und Runner lassen sich einzeln aufklappen.</p></section>'
@@ -374,15 +390,26 @@ class LearningHandler(BaseHTTPRequestHandler):
                    if query.get("selection") == ["saved"] else "")
         section = selector_html(selected, available, self.server.csrf,
                                 message=message, error=problem or "")
+        devices, mobile_error = get_services(
+            self.server, refresh=query.get("refresh_mobile") == ["1"])
+        saved_mobile = query.get("notify") == ["saved"]
+        mobile_service = effective_service(options, self.server.data_dir)
+        mobile_html = mobile_selector_html(
+            mobile_service, devices, self.server.csrf,
+            message=("Zielgerät gespeichert. Der Monitor übernimmt es beim nächsten "
+                     "Prüfzyklus." if saved_mobile else ""),
+            error=mobile_error,
+            override_active=selection_file(self.server.data_dir).exists())
         page = render(self.server.data_dir, self.server.csrf, queued=queued,
-                      repositories_html=section)
+                      repositories_html=section, mobile_html=mobile_html,
+                      expand_settings=saved_mobile or bool(mobile_error))
         return self.respond(200, page, "text/html; charset=utf-8")
 
     def do_POST(self) -> None:
         if not self.trusted():
             return self.respond(403, b"Only Home Assistant Ingress is allowed.")
         route = urlsplit(self.path).path
-        if route not in ("/reset", "/repositories"):
+        if route not in ("/reset", "/repositories", "/notify-service"):
             return self.respond(404, b"Not found")
         if self.headers.get("Content-Type", "").split(";", 1)[0] != "application/x-www-form-urlencoded":
             return self.respond(415, b"Unsupported content type")
@@ -396,6 +423,28 @@ class LearningHandler(BaseHTTPRequestHandler):
         fields = parse_qs(self.rfile.read(length).decode("utf-8", "strict"))
         if fields.get("csrf") != [self.server.csrf]:
             return self.respond(403, b"Invalid CSRF token")
+        if route == "/notify-service":
+            choice = fields.get("service", [])
+            if len(choice) != 1:
+                return self.respond(400, b"Choose exactly one device.")
+            selected = choice[0]
+            if selected == "__native__":
+                with self.server.reset_lock:
+                    clear_service(self.server.data_dir)
+            else:
+                available_services = cached_services(self.server)
+                if available_services is None:
+                    return self.respond(409, b"Device list expired; refresh it.")
+                if selected not in available_services:
+                    return self.respond(400, b"Device not present in HA service list.")
+                with self.server.reset_lock:
+                    save_service(self.server.data_dir, selected)
+            self.send_response(303)
+            self.send_header("Location", "./?notify=saved#settings")
+            self.send_header("Content-Length", "0")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            return
         if route == "/repositories":
             options = read_json(self.server.data_dir / "options.json")
             token = str(options.get("github_api_token") or "")
@@ -449,6 +498,9 @@ def start(data_dir: Path, port: int = 8099, host: str = "0.0.0.0",
     server.reset_lock = Lock()
     server.repositories_lock = Lock()
     server.repositories_cache = {}
+    server.mobile_services_lock = Lock()
+    server.mobile_services_cache = {}
+    server.ha_token = os.environ.get("SUPERVISOR_TOKEN", "")
     # HA Supervisor's documented ingress proxy IP. No direct LAN access.
     server.allowed_peers = ({"172.30.32.2"} if allowed_peers is None
                             else allowed_peers)
