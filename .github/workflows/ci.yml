@@ -37,6 +37,10 @@ jobs:
           assert config["ingress"] is True
           assert config["ingress_port"] == 8099
           assert config["panel_admin"] is True
+          assert config["panel_icon"] == "mdi:github"
+          assert config["panel_title"] == "GitHub Build Monitor"
+          assert (Path("github_build_monitor/icon.png").read_bytes().startswith(bytes.fromhex("89504e470d0a1a0a")))
+          assert (Path("github_build_monitor/logo.png").read_bytes().startswith(bytes.fromhex("89504e470d0a1a0a")))
           assert "docker_api" not in config
           assert all(config["schema"].get(name) is not None for name in
                      ("repositories", "github_api_token",

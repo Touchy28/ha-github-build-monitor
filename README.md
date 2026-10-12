@@ -2,7 +2,7 @@
 
 A standalone **read-only GitHub Actions monitor** for Home Assistant with native HA sensors, estimated build progress and iPhone Live Activities / Android Live Updates. No runner registration or Docker socket permissions.
 
-> **Preview version 0.1.3**. The user is testing the GitHub-hosted app on Home Assistant. This version fixes the old v0.1.0 Live Activity remaining in the Dynamic Island after switching add-on sources. Ensure the old local add-on is stopped before starting the GitHub add-on.
+> **Version 0.1.6**. GitHub-hosted Home Assistant app with read-only monitoring, repository picker and compact timing dashboard. Stop the previous local app if you have not already done so.
 
 ## Capabilities
 
@@ -43,6 +43,14 @@ For a new installation on Home Assistant OS / Supervisor:
 | live_activity_enabled | false | Enable mobile push Live Activities |
 | live_activity_notify_service | notify.mobile_app_iphone | Actual Home Assistant phone notifier |
 | poll_interval_seconds | 60 | 30–300 seconds; higher interval saves API calls |
+
+### Eine zentrale Weboberfläche (ab v0.1.6)
+
+**Info → Weboberfläche öffnen**, alternativ über den neuen **GitHub Build Monitor**-Eintrag in der Home-Assistant-Seitenleiste. Die Webansicht besitzt einen **← Zurück zu Apps**-Knopf. Das GitHub-Logo wird sowohl in der Seitenleiste als auch als App-Kachel dargestellt.
+
+Die Webansicht vereint Repository-Auswahl, Einstellungen-Übersicht und Lernstatistik. Die Statistik ist von Beginn an eingeklappt: **Repository → Workflow → Gesamtzeiten / Runner / Job → Schrittzeiten**. Jede Ebene lässt sich unabhängig öffnen.
+
+**Einschränkung der Home-Assistant-Oberfläche:** Die native **Konfiguration**-Registerkarte lässt sich von einer App nicht auf ihre eigene Ingress-Webansicht umleiten. Die Tokens und Basisoptionen verbleiben daher in der normalen HA-Konfiguration; die Weboberfläche zeigt deren Status sowie einen Link zurück zur App-Übersicht. Das vermeidet zusätzliche Supervisor-Rechte und hält bestehende Einstellungen kompatibel.
 
 ### Repository-Auswahl per GitHub-Token (ab v0.1.5)
 

@@ -66,6 +66,16 @@ class HistoryResetTests(unittest.TestCase):
         rows = learning_store.summary(data, [REPO])
         self.assertEqual(rows[0]["workflows"][0]["name"], "Publish Home Assistant app")
 
+    def test_step_breakdown_nested_by_job(self):
+        records = history()
+        rows = learning_store.step_breakdown(records, REPO, "Publish Home Assistant app")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["job"], "publish")
+        self.assertEqual(rows[0]["steps"][0]["name"], "Flutter")
+        self.assertEqual(rows[0]["steps"][0]["samples"], 3)
+        self.assertEqual(rows[0]["steps"][0]["median_seconds"], 255)
+        self.assertEqual(learning_store.step_breakdown(records, REPO, "Other"), [])
+
     def test_reset_one_preserves_other_repository(self):
         data = history()
         cutoff = core.timestamp("2026-10-12T06:00:00Z")
@@ -254,6 +264,58 @@ class WebTests(unittest.TestCase):
         with urlopen(self.url + "?refresh=1", timeout=4):
             pass
         self.assertEqual(self.github_fetcher.call_count, 2)
+
+    def test_multilevel_time_values_collapsed_by_default(self):
+        with urlopen(self.url, timeout=4) as response:
+            html = response.read().decode("utf-8")
+        self.assertIn('class="repo-fold"', html)
+        self.assertIn('class="workflow-fold"', html)
+        self.assertIn('class="time-fold"', html)
+        self.assertIn('class="runner-fold"', html)
+        self.assertIn('Gelernte Schrittzeiten', html)
+        self.assertIn('📂 publish', html)
+        self.assertIn('Flutter', html)
+        self.assertIn('class="reset-fold"', html)
+        # Each level uses native <details> (no open attribute -> collapsed).
+        self.assertNotIn('<details class="repo-fold" open', html)
+        self.assertNotIn('<details class="workflow-fold" open', html)
+        self.assertNotIn('<details class="time-fold" open', html)
+        self.assertNotIn('<details class="runner-fold" open', html)
+        self.assertIn('Typische Gesamtdauer', html)
+        self.assertIn('Typische Wartezeit', html)
+        self.assertIn('Bisherige Spannweite', html)
+        self.assertIn("Lerndaten dieses Repositories zurücksetzen", html)
+
+    def test_back_navigation_and_unified_configuration_panel(self):
+        with urlopen(self.url, timeout=4) as response:
+            html = response.read().decode("utf-8")
+        self.assertIn('href="/hassio" target="_top"', html)
+        self.assertIn('← Zurück zu Apps', html)
+        self.assertIn('href="#settings"', html)
+        self.assertIn('id="settings"', html)
+        self.assertIn('GitHub-Token', html)
+        self.assertIn('GitHub Build Monitor', html)
+        self.assertNotIn('SECRET_DO_NOT_SHOW', html)
+        self.assertIn('aria-label="GitHub"', html)
+
+    def test_repository_picker_collapsed_unless_error_or_saved(self):
+        with urlopen(self.url, timeout=4) as response:
+            html = response.read().decode("utf-8")
+        self.assertIn('<details class="card repo-picker" id="repositories"', html)
+        self.assertNotIn('<details class="card repo-picker" id="repositories" open', html)
+        from repo_selection_ui import selector_html
+        forced = selector_html([REPO], [], "csrf", error="GitHub momentan nicht erreichbar")
+        self.assertIn('<details class="card repo-picker" id="repositories" open', forced)
+        self.assertIn('GitHub momentan nicht erreichbar', forced)
+
+    def test_binary_assets_and_panel_icon(self):
+        folder = Path(__file__).resolve().parents[1] / "github_build_monitor"
+        for file in ("icon.png", "logo.png"):
+            self.assertEqual((folder / file).read_bytes()[:8],
+                             b"\x89PNG\r\n\x1a\n")
+        configuration = (folder / "config.yaml").read_text()
+        self.assertIn('panel_icon: mdi:github', configuration)
+        self.assertIn('version: "0.1.6"', configuration)
 
     def test_post_queues_and_monitor_applies(self):
         with self.post() as response:

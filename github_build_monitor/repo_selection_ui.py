@@ -43,8 +43,11 @@ def cached_available(server, token: str):
 def selector_html(current: list[str], available: list[dict] | None,
                   csrf: str, message: str = "", error: str = "") -> str:
     parts = [
-        '<section class="card" id="repositories">',
-        '<h2>🐙 Repositories auswählen</h2>',
+        '<details class="card repo-picker" id="repositories"',
+        ' open' if (message or error) else '',
+        '><summary class="fold-title"><span>📁 Repositories auswählen</span>'
+        f'<span class="fold-count">{len(current)} aktiv</span></summary>',
+        '<div class="fold-body">',
         '<p class="muted">GitHub liest mit dem vorhandenen Token alle für ihn '
         'sichtbaren Repositories ein. Du entscheidest, welche überwacht werden. '
         'Der Token selbst bleibt in Home Assistant.</p>',
@@ -62,7 +65,7 @@ def selector_html(current: list[str], available: list[dict] | None,
         if current:
             parts.append("<p><strong>Bisher überwacht:</strong> " +
                          ", ".join(escape(repo) for repo in current) + "</p>")
-        parts.append("</section>")
+        parts.append("</div></details>")
         return "".join(parts)
     current_set = {item.casefold() for item in current}
     choices = []
@@ -94,6 +97,6 @@ def selector_html(current: list[str], available: list[dict] | None,
         'Nicht ausgewählte Projekte werden nicht mehr abgefragt; '
         'bereits gelernte Zeiten bleiben erhalten.</p>',
         '<button type="submit">Auswahl speichern</button>',
-        '</form></section>',
+        '</form></div></details>',
     ]
     return "".join(parts)
