@@ -37,7 +37,8 @@ def cached_services(server) -> list[str] | None:
 
 
 def selector_html(service: str, services: list[str] | None, csrf: str,
-                  message: str = "", error: str = "") -> str:
+                  message: str = "", error: str = "",
+                  override_active: bool = False) -> str:
     current = ""
     try:
         current = normalize(service) if service else ""
@@ -85,8 +86,8 @@ def selector_html(service: str, services: list[str] | None, csrf: str,
             f'<input type="hidden" name="csrf" value="{escape(csrf, quote=True)}">',
             '<label for="mobile-target"><strong>Benachrichtigungsziel auswählen</strong></label>',
             '<select id="mobile-target" name="service" required>',
-            '<option value="" disabled selected>Bitte Gerät wählen</option>'
-            if current not in services else '',
+            '<option value="__native__"' + ('' if override_active else ' selected')
+            + '>Wert aus HA-App-Konfiguration verwenden</option>',
             "".join(options),
             '</select>',
             '<div class="picker-buttons"><button type="submit">Gerät speichern</button></div>',
@@ -95,6 +96,6 @@ def selector_html(service: str, services: list[str] | None, csrf: str,
     body.append(
         '<p class="muted"><small>Die Geräteauswahl aus der Weboberfläche hat Vorrang '
         'vor dem alten Textfeld in der HA-App-Konfiguration. '
-        'Du kannst das Ziel später jederzeit ändern.</small></p></div>'
+        'Du kannst das Ziel später jederzeit ändern oder auf den HA-Wert zurückschalten.</small></p></div>'
     )
     return "".join(body)
