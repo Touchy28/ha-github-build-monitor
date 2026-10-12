@@ -69,6 +69,33 @@ class MobileNotifyTests(unittest.TestCase):
                 mobile_notify.save_service(root, "notify.send_message")
             self.assertFalse(mobile_notify.selection_file(root).exists())
 
+    def test_multi_targets_preserve_old_saved_single_and_aliases(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            opts = {"live_activity_notify_service": OLD}
+            mobile_notify.save_service(root, OLD)
+            self.assertEqual(mobile_notify.effective_services(opts, root), [OLD])
+            mobile_notify.save_services(root, [OLD, NEW],
+                                        {OLD: "Mein iPhone", NEW: "Kinder-iPad"})
+            self.assertEqual(mobile_notify.effective_services(opts, root), [OLD, NEW])
+            self.assertEqual(mobile_notify.saved_aliases(root)[NEW], "Kinder-iPad")
+            mobile_notify.save_services(root, [], {OLD: "Mein iPhone"})
+            self.assertEqual(mobile_notify.effective_services(opts, root), [])
+            mobile_notify.clear_service(root)
+            self.assertEqual(mobile_notify.effective_services(opts, root), [OLD])
+
+    def test_invalid_multi_targets_or_aliases_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for selected, aliases in [
+                ([OLD, OLD], {}), (["notify.send_message"], {}),
+                ([OLD], {OLD: "X" * 49}),
+            ]:
+                with self.subTest(selected=selected, aliases=aliases):
+                    with self.assertRaises(ValueError):
+                        mobile_notify.save_services(root, selected, aliases)
+            self.assertFalse(mobile_notify.selection_file(root).exists())
+
     def test_ha_get_services_authorized_and_never_sends_notification(self):
         class Response:
             def __enter__(self):
@@ -102,10 +129,11 @@ class MobileNotifyTests(unittest.TestCase):
     def test_dropdown_shows_only_allowed_choices_and_no_secrets(self):
         html = mobile_notify_ui.selector_html(
             OLD, [OLD, NEW], "fake-csrf", override_active=False)
-        self.assertIn('value="__native__" selected', html)
+        self.assertIn('name="target"', html)
+        self.assertIn("iPhone von Matthias", html)
         self.assertIn("notify." + OLD, html)
         self.assertIn("notify." + NEW, html)
-        self.assertNotIn('value="' + OLD + '" selected', html)
+        self.assertIn('value="' + OLD + '" checked', html)
         self.assertNotIn("Authorization", html)
 
     def test_selection_is_safe_when_ha_api_is_unavailable(self):
@@ -117,7 +145,7 @@ class MobileNotifyTests(unittest.TestCase):
     def test_native_fallback_available_during_api_error(self):
         html = mobile_notify_ui.selector_html(
             OLD, None, "csrf", error="Home Assistant offline", override_active=True)
-        self.assertIn('name="service" value="__native__"', html)
+        self.assertIn('name="use_native" value="1"', html)
         self.assertIn("Zur HA-App-Konfiguration zurückkehren", html)
 
     def test_switch_clears_old_notification_and_new_target_is_active(self):
