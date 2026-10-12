@@ -401,7 +401,7 @@ class WebTests(unittest.TestCase):
                              b"\x89PNG\r\n\x1a\n")
         configuration = (folder / "config.yaml").read_text()
         self.assertIn('panel_icon: mdi:github', configuration)
-        self.assertIn('version: "0.1.6"', configuration)
+        self.assertIn('version: "0.1.7"', configuration)
 
     def test_post_queues_and_monitor_applies(self):
         with self.post() as response:
