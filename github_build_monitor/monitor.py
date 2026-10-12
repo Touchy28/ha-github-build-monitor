@@ -151,28 +151,33 @@ def compact_minutes(seconds: float) -> str:
 
 def activity_title(run: dict, progress: dict, repo: str,
                    display: str = "", now: float | None = None) -> str:
-    """Prioritize a visible time over a long title on iPhone Live Activities.
+    """iOS headline: ~step remaining / workflow remaining, both in minutes.
 
-    Shows estimated remaining range if enough similar builds exist; otherwise
-    the actual elapsed time since GitHub created the workflow. The title never
-    claims that elapsed time is a remaining-time estimate.
+    We NEVER replace a missing estimate with elapsed time. '–' explicitly
+    means unavailable/insufficient history, not zero minutes.
     """
     name = (display.strip() if isinstance(display, str) else "") or repo.split("/")[-1]
-    low, high = progress.get("eta_lower_seconds"), progress.get("eta_upper_seconds")
     status = str(run.get("status") or "")
-    if (status != "completed" and isinstance(low, (int, float))
-            and isinstance(high, (int, float))):
-        label = "~" + compact_minutes(low)
-        if compact_minutes(high) != compact_minutes(low):
-            label += "–" + compact_minutes(high)
+    if status == "completed":
+        outcome = str(run.get("conclusion") or "")
+        label = {"success": "✓", "failure": "Fehler",
+                 "cancelled": "Abbruch", "timed_out": "Zeitüberschreitung"}.get(
+                     outcome, "Beendet")
     else:
-        start = timestamp(run.get("created_at") or run.get("run_started_at"))
-        finish = (timestamp(run.get("updated_at") or run.get("completed_at"))
-                  if status == "completed" else now if now is not None else time.time())
-        label = "⏱" + compact_minutes(max(0, finish - start)) if (
-            start is not None and finish is not None) else ""
-    # Keep the time visible when names are too long. Users can also assign
-    # custom short names, but unconfigured repositories must remain readable.
+        step = progress.get("current_step_remaining_seconds")
+        entire = progress.get("estimated_remaining_seconds")
+        def minutes(value: object) -> str:
+            # Round UP so ongoing steps don't appear completed prematurely.
+            from math import ceil
+            return str(ceil(value / 60)) if (
+                isinstance(value, (int, float)) and not isinstance(value, bool)
+                and 0 < value < 8 * 3600) else "–"
+        step_minutes, total_minutes = minutes(step), minutes(entire)
+        if step_minutes == "–" and total_minutes == "–":
+            label = "Restzeit –"
+        else:
+            label = f"≈{step_minutes}/{total_minutes}m"
+    # Keep the time visible on the Dynamic Island, even with long repo names.
     maximum_name = 20 if label else 30
     if len(name) > maximum_name:
         name = name[:maximum_name - 1] + "…"
