@@ -1,0 +1,7 @@
+FROM python:3.12-alpine
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /app
+COPY core.py monitor.py ./
+COPY run.sh /app/run.sh
+RUN chmod 0755 /app/run.sh
+CMD ["/app/run.sh"]
