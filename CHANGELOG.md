@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.6 — 2026-10-12
+
+- Added **← Zurück zu Apps** navigation from HA Ingress to the Home Assistant app overview.
+- Updated sidebar icon to `mdi:github`; added bundled GitHub icon.png and logo.png assets.
+- Unified entry page with repositories, settings overview and learning statistics.
+- Collapsed statistics hierarchy by default: Repository → Workflow → time values/runner details/individual Job → Step durations. Reset controls are tucked away.
+- Repository picker itself is collapsed for a more compact mobile view, but opens automatically for errors and save confirmations.
+- Documented native Supervisor Configuration tab limitation and kept read-only Home Assistant options and GitHub credentials unchanged.
+
+
 ## 0.1.5 — geplant, PR #2 (noch nicht veröffentlicht)
 
 - Home-Assistant-Ingress-Weboberfläche zum Anzeigen lokaler Lernzeiten pro Repository und Workflow.
