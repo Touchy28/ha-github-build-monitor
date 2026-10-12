@@ -2,7 +2,7 @@
 
 A standalone **read-only GitHub Actions monitor** for Home Assistant with native HA sensors, estimated build progress and iPhone Live Activities / Android Live Updates. No runner registration or Docker socket permissions.
 
-> **Version 0.2.0**. GitHub-hosted Home Assistant app with read-only monitoring, repository picker and compact timing dashboard. Stop the previous local app if you have not already done so.
+> **Version 0.2.2**. GitHub-hosted Home Assistant app with read-only monitoring, repository picker and compact timing dashboard. Stop the previous local app if you have not already done so.
 
 ## Capabilities
 
@@ -54,7 +54,7 @@ Die Webansicht vereint Repository-Auswahl, Einstellungen-Übersicht und Lernstat
 
 ### Eindeutige parallele Live-Aktivitäten (ab v0.2.1)
 
-Jede Live-Aktivität zeigt jetzt **Repository · Workflow #GitHub-Laufnummer · Restzeit**, zum Beispiel **`B&B · CI #1055 · ≈–/5m`** oder nach Abschluss **`B&B · CI #1055 · ✓`**. Parallel laufende Workflows (auch auf verschiedenen HA-/Synology-/NEWMAJOR-Runnern) behalten getrennte Live-Aktivitäten und eindeutige Tags.
+Jede Live-Aktivität hat den **festen Titel `Repository · Workflow #Laufnummer`**, beispielsweise **`B&B · CI #1055`**. Die **änderbare zweite Zeile** zeigt die Restzeit, den Schritt und danach den Abschlussstatus. iOS erlaubt keine nachträglichen Titeländerungen; deshalb wird die Zeit seit v0.2.2 nicht mehr in den Titel geschrieben. Parallel laufende Workflows (auch auf verschiedenen HA-/Synology-/NEWMAJOR-Runnern) behalten getrennte Live-Aktivitäten und eindeutige Tags.
 
 Der vorhandene HA-Repository-Sensor zeigt weiterhin genau einen primären Workflow-Run. Für die gleichzeitig laufenden anderen Builds stehen nun `primary_run_id` und `active_run_details` mit eigener Laufnummer, Status, Fortschritt, Runner, Branch und URL in den Attributen. Es werden bis zu sechs parallele Läufe im Detail angezeigt; `active_run_count` zählt alle erkannten aktiven Läufe.
 
@@ -62,8 +62,8 @@ Beim Abschluss wird der Endstatus drei Mal mit mindestens 60 Sekunden Abstand an
 
 ### Restzeit für aktuellen Schritt und gesamten Build (ab v0.2.0)
 
-Die Live-Aktivität zeigt bei ausreichender Datenbasis etwa
-**`B&B · CI #1055 · ≈1/12m`**. Dabei bedeutet `1` **verbleibende Minuten im
+Die **aktualisierbare zweite Zeile** zeigt bei ausreichender Datenbasis etwa
+**`≈1/12m · Flutter · 7/9 Schritte`**. Dabei bedeutet `1` **verbleibende Minuten im
 aktuell laufenden GitHub-Schritt** und `12` **verbleibende Minuten bis
 zum Abschluss des gesamten Workflows** (einschließlich der typischen
 Wartezeiten auf weitere Jobs/Runner).
@@ -72,20 +72,18 @@ Die Schätzungen basieren auf echten früheren Laufzeiten desselben Schritts
 beziehungsweise Workflows. Für beide Prognosen sind mindestens drei
 passende erfolgreiche historische Messungen erforderlich. Kann ein Wert
 noch nicht zuverlässig berechnet werden, steht an dieser Stelle `–`:
-`B&B · CI #1055 · ≈–/12m`. Fehlen beide, erscheint `B&B · CI #1055 · Restzeit –`.
+`≈–/12m`. Fehlen beide, erscheint `Restzeit –` in der zweiten Zeile.
 Es wird **keine vergangene Laufzeit mehr als Restzeit ausgegeben**.
-Bei einem abgeschlossenen Build wechselt die Überschrift zu `✓`
-beziehungsweise einem Fehlerstatus.
+Bei einem abgeschlossenen Build wechselt die zweite Zeile zu `✓ · Erfolgreich abgeschlossen`
+beziehungsweise einem Fehlerstatus; die Laufnummer im Titel bleibt unverändert.
 
 ### Kürzere Titel und Repository-Anzeigenamen (ab v0.1.9)
 
 Die iPhone-Live-Aktivität zeigt **keinen überflüssigen Präfix „GitHub ·“**
-mehr. Der Titel enthält nun den Repo-Namen und einen kompakten Zeitwert:
-bei belastbarer Prognose die **geschätzte Restzeitspanne** (z. B.
-`B&B · ~3m–6m`), andernfalls die **bisherige Laufzeit** (z. B.
-`more-tents · ⏱3m`). In der zweiten Zeile stehen nur der aktuelle Job
-oder Schritt und die abgeschlossenen Schritte; die Prozentzahl wird bereits
-rechts und im Fortschrittsbalken angezeigt.
+mehr. In v0.2.2 enthält der beim Start festgelegte Titel den Repo-Namen,
+Workflow und die Laufnummer. Die zeitabhängige Restzeit steht in der
+aktualisierbaren zweiten Zeile (zusammen mit Job/Schritt und Schrittanzahl);
+die Prozentzahl wird rechts und im Fortschrittsbalken angezeigt.
 
 Unter **Weboberfläche → Repositories auswählen** gibt es zu jedem GitHub-
 Repository ein Feld **Anzeigename / Abkürzung**. Darin kannst du z. B.
@@ -205,7 +203,7 @@ Home Assistant REST-created sensor entities are **not persistent** across an HA 
 
 ### iPhone Live Activities
 
-When enabled, notifications use the Companion App live_update setting with a unique tag per run. Updates modify the same activity; after a completed run, the monitor sends the terminal result three times over successive polls (at least 60 seconds apart), then retires it after at least 180 seconds. Submission to Home Assistant cannot prove iOS push delivery. Requires HA Core 2026.7+, iOS 17.2+ and working Companion App push notifications.
+When enabled, notifications use the Companion App live_update setting with a unique tag per run. The iOS title is immutable; time and completion data are delivered in the mutable message. Updates modify the same activity; after a completed run, the monitor sends the terminal result three times over successive polls (at least 60 seconds apart), then retires it after at least 180 seconds. The first terminal notification is sent at normal priority, subsequent retries are quiet. If a legacy activity is no longer tracked locally, clear it manually using the original per-run tag. Submission to Home Assistant cannot prove iOS push delivery. Requires HA Core 2026.7+, iOS 17.2+ and working Companion App push notifications.
 
 ### Known limits
 
