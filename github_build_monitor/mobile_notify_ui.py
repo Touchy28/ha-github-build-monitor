@@ -51,7 +51,7 @@ def selector_html(service: str, services: list[str] | None, csrf: str,
                 key = normalize(item)
             except ValueError:
                 continue
-            selected = " selected" if key == current else ""
+            selected = " selected" if key == current and override_active else ""
             options.append(
                 f'<option value="{escape(key, quote=True)}"{selected}>'
                 f'{escape(friendly_label(key))} · {escape("notify." + key)}</option>'
