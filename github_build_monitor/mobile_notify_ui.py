@@ -51,7 +51,7 @@ def selector_html(service: str, services: list[str] | None, csrf: str,
     chosen = set(selected)
     aliases = aliases or {}
     body = [
-        '<div class="notify-picker"><h3>📱 Geräte für Live-Aktivitäten</h3>',
+        '<div class="notify-picker">',
         f'<p class="muted"><strong>{len(chosen)} ausgewählt</strong>. '
         'Du kannst mehrere Geräte benachrichtigen und die Namen anpassen.</p>',
         '<form method="get" action="./">'
@@ -71,7 +71,7 @@ def selector_html(service: str, services: list[str] | None, csrf: str,
         body.extend([
             '<form action="notify-service" method="post">',
             f'<input type="hidden" name="csrf" value="{escape(csrf, quote=True)}">',
-            '<div class="repository-list">'
+            '<div class="selection-list">'
         ])
         for item in services:
             try:
@@ -81,13 +81,13 @@ def selector_html(service: str, services: list[str] | None, csrf: str,
             title = aliases.get(key) or friendly_label(key)
             checked = " checked" if key in chosen else ""
             body.extend([
-                '<div class="mobile-choice">',
-                f'<label class="mobile-choice-label"><input type="checkbox" name="target" '
+                '<div class="selection-choice">',
+                f'<label class="selection-choice-label"><input type="checkbox" name="target" '
                 f'value="{escape(key, quote=True)}"{checked}>',
-                f'<span><strong>{escape(title)}</strong><small>notify.{escape(key)}</small>'
+                f'<span class="selection-choice-details"><strong>{escape(title)}</strong><small>notify.{escape(key)}</small>'
                 '</span></label>',
                 f'<input type="hidden" name="listed" value="{escape(key, quote=True)}">',
-                '<label class="alias-label">Anzeigename (optional)',
+                '<label class="selection-alias-label">Anzeigename (optional)',
                 f'<input type="text" name="alias" maxlength="48" '
                 f'value="{escape(aliases.get(key, ""), quote=True)}" '
                 f'placeholder="{escape(friendly_label(key), quote=True)}"></label>',
