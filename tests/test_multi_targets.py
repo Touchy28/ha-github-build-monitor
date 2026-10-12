@@ -80,24 +80,28 @@ class MultiTargetTests(unittest.TestCase):
         self.assertEqual(state["activity_targets"][OLD][REPO], {})
         self.assertIn("42", state["activity_targets"][TABLET][REPO])
 
-    def test_elapsed_time_in_title_updates_each_minute(self):
+    def test_remaining_time_in_title_updates_when_eta_changes(self):
         state = {"activities": {}, "active_mobile_notify_services": [OLD],
                  "activity_targets": {}}
         monitor.reconcile_mobile_targets([OLD], OLD, state, "TOKEN")
         config = {"live_activity_enabled": True,
                   "live_activity_notify_services": [OLD],
                   "repository_aliases": {REPO.casefold(): "B&B"}}
+        def forecast(repo, run, jobs, history, now):
+            return {"estimated_remaining_seconds": 630 - (now - 1791800010)}
         with mock.patch.object(monitor, "runs_for", return_value=[run()]), \
              mock.patch.object(monitor, "jobs_for", return_value=[]), \
+             mock.patch.object(monitor, "predict", side_effect=forecast), \
              mock.patch.object(monitor, "set_sensor"), \
              mock.patch.object(monitor, "notify") as sent:
             monitor.monitor_repository(REPO, "", "TOKEN", config, state, {}, 1791800010)
             self.assertEqual(sent.call_count, 1)
-            self.assertIn("B&B · ⏱", sent.call_args.args[2]["title"])
+            self.assertEqual(sent.call_args.args[2]["title"], "B&B · ≈–/11m")
             monitor.monitor_repository(REPO, "", "TOKEN", config, state, {}, 1791800020)
             self.assertEqual(sent.call_count, 1)
             monitor.monitor_repository(REPO, "", "TOKEN", config, state, {}, 1791800050)
             self.assertEqual(sent.call_count, 2)
+            self.assertEqual(sent.call_args.args[2]["title"], "B&B · ≈–/10m")
 
     def test_each_phone_receives_completion_then_removal(self):
         state = {"activity_targets": {}, "active_mobile_notify_services": [OLD, TABLET],

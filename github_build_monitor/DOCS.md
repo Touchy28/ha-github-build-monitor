@@ -61,3 +61,14 @@ alle gespeicherten Lernwerte bleiben unverändert.
 
 Die **Geräteauswahl** ist ab jetzt eigenständig zwischen Repositories und
 Einstellungen einklappbar. Beide Auswahllisten verwenden dasselbe Design.
+
+## Restzeit im Titel (v0.2.0)
+
+Die Live-Aktivität verwendet jetzt ausschließlich **Restzeiten**:
+`B&B · ≈1/12m` bedeutet noch ungefähr eine Minute im aktuellen
+GitHub-Schritt und insgesamt noch ungefähr zwölf Minuten bis der Workflow
+fertig ist. Die Gesamtprognose berücksichtigt zusätzlich die aus früheren
+Builds gelernten Runner-/Wartezeiten. Beide Schätzungen benötigen mindestens
+drei passende historische Messungen. Ein fehlender Wert erscheint als `–`;
+vergangene Laufzeit wird nicht ersatzweise angezeigt. `≈` kennzeichnet
+Prognosen und nicht exakte GitHub-Messwerte.

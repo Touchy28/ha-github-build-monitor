@@ -107,6 +107,8 @@ def snapshot(repo: str, run: dict, jobs: list[dict], history: dict,
     total_steps = completed_steps = 0
     active_step = ""
     active_job = ""
+    active_running = False
+    current_step_remaining = None
     observed = 0
     historic = 0
     for job in jobs:
@@ -135,6 +137,21 @@ def snapshot(repo: str, run: dict, jobs: list[dict], history: dict,
                     # Two historical observations are required for this exact workflow step.
                     if len(entry) >= 2:
                         done_weight += weight * min(.9, max(0, now - started) / weight)
+                # Prefer the actually executing step over a queued job/step.
+                if not active_running:
+                    active_step = str(step.get("name") or "")
+                    active_job = str(job.get("name") or "")
+                    active_running = True
+                    # A step-specific ETA needs actual start time AND three
+                    # previously observed successful executions of THIS step.
+                    clean = [float(v) for v in entry
+                             if isinstance(v, (float, int)) and 0 < v <= 21600]
+                    if started is not None and len(clean) >= 3:
+                        expected = median(clean)
+                        elapsed = max(0, now - started)
+                        # An overdue step does not imply '0m remaining'.
+                        if elapsed < expected:
+                            current_step_remaining = max(1, int(expected - elapsed))
             if not active_step:
                 active_step = str(step.get("name") or "")
                 active_job = str(job.get("name") or "")
@@ -166,6 +183,8 @@ def snapshot(repo: str, run: dict, jobs: list[dict], history: dict,
         "total_steps": total_steps,
         "current_job": active_job,
         "current_step": active_step,
+        "current_step_remaining_seconds": (current_step_remaining
+                                           if status != "completed" else None),
         "estimated_remaining_seconds": eta,
         "runner_name": next((j.get("runner_name") for j in jobs
                              if j.get("runner_name") and j.get("status") == "in_progress"), None),

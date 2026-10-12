@@ -2,7 +2,7 @@
 
 A standalone **read-only GitHub Actions monitor** for Home Assistant with native HA sensors, estimated build progress and iPhone Live Activities / Android Live Updates. No runner registration or Docker socket permissions.
 
-> **Version 0.1.9**. GitHub-hosted Home Assistant app with read-only monitoring, repository picker and compact timing dashboard. Stop the previous local app if you have not already done so.
+> **Version 0.2.0**. GitHub-hosted Home Assistant app with read-only monitoring, repository picker and compact timing dashboard. Stop the previous local app if you have not already done so.
 
 ## Capabilities
 
@@ -51,6 +51,23 @@ For a new installation on Home Assistant OS / Supervisor:
 Die Webansicht vereint Repository-Auswahl, Einstellungen-Übersicht und Lernstatistik. Die Statistik ist von Beginn an eingeklappt: **Repository → Workflow → Gesamtzeiten / Runner / Job → Schrittzeiten**. Jede Ebene lässt sich unabhängig öffnen.
 
 **Einschränkung der Home-Assistant-Oberfläche:** Die native **Konfiguration**-Registerkarte lässt sich von einer App nicht auf ihre eigene Ingress-Webansicht umleiten. Die Tokens und Basisoptionen verbleiben daher in der normalen HA-Konfiguration; die Weboberfläche zeigt deren Status sowie einen Link zurück zur App-Übersicht. Das vermeidet zusätzliche Supervisor-Rechte und hält bestehende Einstellungen kompatibel.
+
+### Restzeit für aktuellen Schritt und gesamten Build (ab v0.2.0)
+
+Die Live-Aktivität zeigt bei ausreichender Datenbasis etwa
+**`B&B · ≈1/12m`**. Dabei bedeutet `1` **verbleibende Minuten im
+aktuell laufenden GitHub-Schritt** und `12` **verbleibende Minuten bis
+zum Abschluss des gesamten Workflows** (einschließlich der typischen
+Wartezeiten auf weitere Jobs/Runner).
+
+Die Schätzungen basieren auf echten früheren Laufzeiten desselben Schritts
+beziehungsweise Workflows. Für beide Prognosen sind mindestens drei
+passende erfolgreiche historische Messungen erforderlich. Kann ein Wert
+noch nicht zuverlässig berechnet werden, steht an dieser Stelle `–`:
+`B&B · ≈–/12m`. Fehlen beide, erscheint `B&B · Restzeit –`.
+Es wird **keine vergangene Laufzeit mehr als Restzeit ausgegeben**.
+Bei einem abgeschlossenen Build wechselt die Überschrift zu `✓`
+beziehungsweise einem Fehlerstatus.
 
 ### Kürzere Titel und Repository-Anzeigenamen (ab v0.1.9)
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0 — 2026-10-12
+
+- Show remaining time for the **current running step / entire remaining workflow** (e.g. `B&B · ≈1/12m`), not elapsed time.
+- Current-step ETA is calculated only when GitHub supplies the running step start time and at least **3** valid prior successful samples for the identical repo, workflow, job and step.
+- Total remaining-time ETA comes from the existing workflow-level historical model (minimum 3 previous successful runs), retaining runner and queue-time learning.
+- Unknown estimates show `–` (e.g. `B&B · ≈–/12m` or `B&B · Restzeit –`); queue delays and overdue steps are never shown as a fabricated `0m`.
+- Keep finished runs concise (`✓`/error), retain the existing repo alias and per-device notification tags, and refresh as remaining minutes change.
+
+
 ## 0.1.9 — 2026-10-12
 
 - iOS Live Activity: remove redundant "GitHub ·" title prefix; show repository name or custom short display name **with time in the title**.
