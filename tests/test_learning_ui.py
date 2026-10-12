@@ -132,7 +132,7 @@ class WebTests(unittest.TestCase):
         ]
         self.github_fetch = mock.patch("repo_selection_ui.discover",
                                        return_value=self.github_repos)
-        self.github_fetch.start()
+        self.github_fetcher = self.github_fetch.start()
         self.server = learning_ui.start(self.root, port=0, host="127.0.0.1",
                                         allowed_peers={"127.0.0.1"})
         self.url = "http://127.0.0.1:" + str(self.server.server_address[1]) + "/"
@@ -234,7 +234,7 @@ class WebTests(unittest.TestCase):
             pass
         with urlopen(self.url + "?refresh=1", timeout=4):
             pass
-        self.assertEqual(self.github_fetch.call_count, 2)
+        self.assertEqual(self.github_fetcher.call_count, 2)
 
     def test_post_queues_and_monitor_applies(self):
         with self.post() as response:
