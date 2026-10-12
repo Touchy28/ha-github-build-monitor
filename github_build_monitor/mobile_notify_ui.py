@@ -80,6 +80,14 @@ def selector_html(service: str, services: list[str] | None, csrf: str,
             '<p class="warning">Keine <code>notify.mobile_app_*</code>-Dienste gefunden. '
             'Prüfe die Home-Assistant-Companion-App und die Push-Berechtigung.</p>'
         )
+    if (services is None or not services) and override_active:
+        body.append(
+            '<form action="notify-service" method="post">'
+            f'<input type="hidden" name="csrf" value="{escape(csrf, quote=True)}">'
+            '<input type="hidden" name="service" value="__native__">'
+            '<button type="submit" class="neutral">Zur HA-App-Konfiguration zurückkehren'
+            '</button></form>'
+        )
     else:
         if current and current not in services:
             body.append(
