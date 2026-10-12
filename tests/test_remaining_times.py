@@ -49,7 +49,7 @@ class RemainingTimesTests(unittest.TestCase):
         # also remains unknown rather than using a guessed step sum.
         value.update(predict(REPO, RUN, [j], {}, NOW))
         self.assertEqual(activity_title(RUN, value, REPO, "B&B"),
-                         "B&B · Restzeit –")
+                         "B&B · Run #42 · Restzeit –")
 
     def test_overdue_step_is_unknown_not_fake_zero(self):
         j = job(started="2026-10-12T11:55:00Z")
