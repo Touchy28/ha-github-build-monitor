@@ -1,6 +1,6 @@
 name: "GitHub Build Monitor"
 description: "Read-only GitHub Actions monitoring with Home Assistant sensors and iPhone Live Activities"
-version: "0.1.9"
+version: "0.2.0"
 slug: "github_build_monitor"
 url: "https://github.com/Touchy28/ha-github-build-monitor"
 arch:
