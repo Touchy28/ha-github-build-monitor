@@ -81,10 +81,11 @@ def summary(history: dict, watched: list[str]) -> list[dict]:
             waits = [float(v.get("queue_seconds") or 0) for v in valid]
             names = [v.get("workflow_name") for v in valid
                      if isinstance(v.get("workflow_name"), str) and v["workflow_name"]]
+            remembered = (history.get("workflow_names") or {}).get(key)
             runners = Counter(str(v.get("runner") or "unknown") for v in valid)
             workflows.append({
                 "id": key[len(prefix):],
-                "name": names[-1] if names else "Workflow #" + key[len(prefix):],
+                "name": names[-1] if names else remembered or "Workflow #" + key[len(prefix):],
                 "runs": len(valid),
                 "median_seconds": round(median(numbers)),
                 "min_seconds": round(min(numbers)),
