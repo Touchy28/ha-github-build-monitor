@@ -20,7 +20,7 @@ jobs:
       - name: Unit tests
         run: python -m unittest discover -s tests -v
       - name: Python syntax
-        run: python -m py_compile github_build_monitor/core.py github_build_monitor/forecast.py github_build_monitor/monitor.py
+        run: python -m py_compile github_build_monitor/core.py github_build_monitor/forecast.py github_build_monitor/learning_store.py github_build_monitor/learning_ui.py github_build_monitor/monitor.py
       - name: Shell syntax
         run: sh -n github_build_monitor/run.sh
       - name: Validate Home Assistant app metadata
@@ -34,6 +34,9 @@ jobs:
           assert repo["url"] == config["url"], "Repository URL mismatch"
           assert config["slug"] == "github_build_monitor"
           assert config["homeassistant_api"] is True
+          assert config["ingress"] is True
+          assert config["ingress_port"] == 8099
+          assert config["panel_admin"] is True
           assert "docker_api" not in config
           assert all(config["schema"].get(name) is not None for name in
                      ("repositories", "github_api_token",
@@ -42,4 +45,4 @@ jobs:
       - name: Build application container
         run: docker build -t ha-github-build-monitor:ci ./github_build_monitor
       - name: Smoke test imports inside built container
-        run: docker run --rm --entrypoint python ha-github-build-monitor:ci -c 'import core, forecast, monitor; print("Monitor modules import successfully")'
+        run: docker run --rm --entrypoint python ha-github-build-monitor:ci -c 'import core, forecast, learning_store, learning_ui, monitor; print("Monitor modules import successfully")'
