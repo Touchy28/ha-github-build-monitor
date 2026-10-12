@@ -44,6 +44,18 @@ For a new installation on Home Assistant OS / Supervisor:
 | live_activity_notify_service | notify.mobile_app_iphone | Actual Home Assistant phone notifier |
 | poll_interval_seconds | 60 | 30–300 seconds; higher interval saves API calls |
 
+### Lernstatistik und Zurücksetzen (ab v0.1.5)
+
+Die normale **Konfiguration** zeigt statische Supervisor-App-Optionen wie Token und Repository-Liste. Laufende Lerndaten können dort nicht automatisch als Tabelle angezeigt werden. Für die neue Statistik öffne in der App unter **Info → OPEN WEB UI** die integrierte Home-Assistant-Oberfläche **Build-Lernstatistik**. Es ist kein separater Webserver-Zugang, Passwort oder Router-Port erforderlich (Home Assistant Ingress, Admin-Panel).
+
+- Pro konfiguriertem Repository: Anzahl vollständiger Workflow-Durchläufe, Schrittmessungen und verschiedener Schritte.
+- Pro Workflow: typische Gesamtdauer, Wartezeit, bisheriges Minimum und Maximum sowie genutzte Runner-Familien.
+- Erste Gesamtzeit-Prognosen können ab drei passenden Messungen entstehen; die Genauigkeit hängt weiterhin von Job-Topologie und Runner ab.
+- **Zurücksetzen:** Entweder nur ein Repository oder alle Lerndaten. Eine Bestätigung ist notwendig. Änderungen wirken beim nächsten Poll (normalerweise innerhalb von 60 Sekunden).
+- Beim Reset werden historische GitHub-Runs vor dem Reset-Zeitpunkt **nicht wieder automatisch eingelesen**; erst später fertiggestellte erfolgreiche Runs werden neu gelernt.
+- Der Reset verändert **nicht** den GitHub-Token, die konfigurierten Repositories, die Sensor-Entitäten oder laufende iPhone-Live-Aktivitäten.
+- Die Informationen verbleiben im privaten App-Datenverzeichnis; der Webzugriff wird über Home Assistant authentifiziert.
+
 ### Entities
 
 Each repository retains its **v0.1.0 entity ID**, for example **sensor.github_runner_touchy28_more_tents_18b499**. Sensor states retain running/queued/success/failure/cancelled/idle. The original attributes progress, steps_done, steps_total, job, step, runner, eta_seconds, active_runs and url remain available. New attributes include progress_percent, progress_is_estimate, workflow, run_id, run_url, current_job, current_step, completed_steps, total_steps, estimated_remaining_seconds, active_run_count and runner_name.
