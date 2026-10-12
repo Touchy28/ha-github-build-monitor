@@ -166,6 +166,11 @@ def activity_title(run: dict, progress: dict, repo: str,
     else:
         step = progress.get("current_step_remaining_seconds")
         entire = progress.get("estimated_remaining_seconds")
+        # The entire run cannot finish sooner than its active step.
+        if (isinstance(step, (int, float)) and not isinstance(step, bool)
+                and isinstance(entire, (int, float)) and not isinstance(entire, bool)
+                and step > entire > 0):
+            entire = step
         def minutes(value: object) -> str:
             # Round UP so ongoing steps don't appear completed prematurely.
             from math import ceil
