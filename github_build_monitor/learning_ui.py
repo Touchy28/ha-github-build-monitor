@@ -142,7 +142,8 @@ def render(data_dir: Path, csrf: str, queued: bool = False) -> bytes:
         f'<style>{STYLES}</style></head><body>'
         '<header><h1>📊 Build-Lernstatistik</h1>'
         '<p class="muted">Lokale Erfahrungswerte je Repository und Workflow. '
-        'Nur erfolgreich abgeschlossene Builds fließen in die Prognose ein.</p></header>'
+        'Nur erfolgreich abgeschlossene Builds fließen in die Prognose ein. '
+        '<a href="./">↻ Anzeige aktualisieren</a></p></header>'
         + toast + "".join(cards)
         + '<section class="card"><h2>Alle Lerndaten zurücksetzen</h2>'
         '<p class="muted">Setzt die gesammelten Zeiten aller Repositories zurück, '
