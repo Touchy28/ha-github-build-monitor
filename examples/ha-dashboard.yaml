@@ -1,0 +1,15 @@
+# Benötigt Template-Sensoren aus ha-template.yaml.
+type: grid
+columns: 2
+square: false
+cards:
+  - type: gauge
+    name: DSO Optimizer
+    entity: sensor.github_dso_fortschritt
+    min: 0
+    max: 100
+  - type: gauge
+    name: Bäume und Bienen
+    entity: sensor.github_baume_und_bienen_fortschritt
+    min: 0
+    max: 100
