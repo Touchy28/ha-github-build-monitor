@@ -18,6 +18,8 @@ from urllib.request import Request, urlopen
 from core import (activity_tag, history_key, learn, notify_service, repositories,
                   sensor_id, snapshot, timestamp)
 from forecast import observe, predict
+from learning_store import learning_allowed, reset_history
+from learning_ui import start as start_learning_ui
 
 API_URL = "https://api.github.com"
 HA_URL = "http://supervisor/core/api"
@@ -212,7 +214,8 @@ def monitor_repository(repo: str, github_token: str, ha_token: str,
     for finished in recent:
         key = f"{repo.casefold()}:{finished.get('id')}"
         if (finished.get("status") == "completed"
-                and finished.get("conclusion") == "success" and key not in seen):
+                and finished.get("conclusion") == "success" and key not in seen
+                and learning_allowed(repo, finished, history)):
             run_id = int(finished["id"])
             jobs = jobs_cache.get(run_id)
             if jobs is None:
@@ -346,6 +349,31 @@ def clear_legacy_notifications(data_dir: Path, state: dict, service: str,
     state["v010_legacy_tag_cleanup_v013"] = True
     log(f"Cleared old v0.1.0 Live Activity tags for {len(known)} repositories")
 
+def apply_pending_learning_reset(data_dir: Path, history: dict) -> bool:
+    """Apply ingress reset requests in the monitoring thread (sole history writer)."""
+    path = data_dir / "reset-learning-command.json"
+    command = read_json(path, {})
+    if not command:
+        return False
+    scope = command.get("scope")
+    when = command.get("at")
+    if (not isinstance(scope, str)
+            or (scope != "all" and "/" not in scope)
+            or not isinstance(when, (int, float))
+            or not command.get("csrf_checked")):
+        log("Invalid learning reset request ignored")
+        path.unlink(missing_ok=True)
+        return False
+    request_id = f"{scope}:{when}"
+    if history.get("last_learning_reset_id") != request_id:
+        reset_history(history, scope, float(when))
+        history["last_learning_reset_id"] = request_id
+        write_json(data_dir / "monitor_history.json", history)
+        log(f"Learning history reset for {scope} (other settings preserved)")
+    path.unlink(missing_ok=True)
+    return True
+
+
 def main() -> None:
     ha_token = os.environ.get("SUPERVISOR_TOKEN", "")
     if not ha_token:
@@ -357,7 +385,11 @@ def main() -> None:
     state = read_json(state_file, {})
     history = read_json(history_file, {})
     history = migrate_history(DATA_DIR, history)
+    start_learning_ui(DATA_DIR)
+    log("Learning dashboard active via Home Assistant Ingress")
     while True:
+        # Apply changes before polling so old GitHub runs are not learned again.
+        apply_pending_learning_reset(DATA_DIR, history)
         # As in working v0.1.0, configuration changes take effect without a restart.
         config = read_json(DATA_DIR / "options.json", {})
         repos = repositories(config)
