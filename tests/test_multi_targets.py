@@ -59,6 +59,27 @@ class MultiTargetTests(unittest.TestCase):
             self.assertEqual(send.call_count, 3)
             self.assertEqual(send.call_args.args[0], TABLET)
 
+    def test_one_offline_phone_does_not_block_other_phone(self):
+        state = {"activity_targets": {}, "active_mobile_notify_services": [OLD, TABLET],
+                 "activities": {}}
+        monitor.reconcile_mobile_targets([OLD, TABLET], OLD, state, "TOKEN")
+        cfg = {"live_activity_enabled": True,
+               "live_activity_notify_services": [OLD, TABLET]}
+        delivered = []
+        def send(target, ha_token, payload):
+            if target == OLD:
+                raise RuntimeError("Phone temporarily offline")
+            delivered.append((target, payload["message"]))
+        with mock.patch.object(monitor, "runs_for", return_value=[run()]), \
+             mock.patch.object(monitor, "jobs_for", return_value=[]), \
+             mock.patch.object(monitor, "set_sensor"), \
+             mock.patch.object(monitor, "notify", side_effect=send):
+            monitor.monitor_repository(REPO, "", "TOKEN", cfg, state, {}, 1791800010)
+        self.assertEqual(delivered[0][0], TABLET)
+        self.assertEqual(len(delivered), 1)
+        self.assertEqual(state["activity_targets"][OLD][REPO], {})
+        self.assertIn("42", state["activity_targets"][TABLET][REPO])
+
     def test_each_phone_receives_completion_then_removal(self):
         state = {"activity_targets": {}, "active_mobile_notify_services": [OLD, TABLET],
                  "activities": {}}
