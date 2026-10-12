@@ -155,47 +155,49 @@ def compact_minutes(seconds: float) -> str:
     return f"{seconds // 60}m"
 
 
-def activity_title(run: dict, progress: dict, repo: str,
-                   display: str = "", now: float | None = None) -> str:
-    """iOS headline: ~step remaining / workflow remaining, both in minutes.
+def remaining_time_label(run: dict, progress: dict) -> str:
+    """Time/status text for the *mutable* iOS message, never its fixed title.
 
-    We NEVER replace a missing estimate with elapsed time. '–' explicitly
-    means unavailable/insufficient history, not zero minutes.
+    No historical estimate -> an en dash. Never display elapsed as remaining.
     """
-    name = (display.strip() if isinstance(display, str) else "") or repo.split("/")[-1]
     status = str(run.get("status") or "")
     if status == "completed":
         outcome = str(run.get("conclusion") or "")
-        label = {"success": "✓", "failure": "Fehler",
-                 "cancelled": "Abbruch", "timed_out": "Zeitüberschreitung"}.get(
-                     outcome, "Beendet")
-    else:
-        step = progress.get("current_step_remaining_seconds")
-        entire = progress.get("estimated_remaining_seconds")
-        # The entire run cannot finish sooner than its active step.
-        if (isinstance(step, (int, float)) and not isinstance(step, bool)
-                and isinstance(entire, (int, float)) and not isinstance(entire, bool)
-                and step > entire > 0):
-            entire = step
-        def minutes(value: object) -> str:
-            # Round UP so ongoing steps don't appear completed prematurely.
-            from math import ceil
-            return str(ceil(value / 60)) if (
-                isinstance(value, (int, float)) and not isinstance(value, bool)
-                and 0 < value < 8 * 3600) else "–"
-        step_minutes, total_minutes = minutes(step), minutes(entire)
-        if step_minutes == "–" and total_minutes == "–":
-            label = "Restzeit –"
-        else:
-            label = f"≈{step_minutes}/{total_minutes}m"
-    # Keep the workflow and GitHub run number beside the repository alias.
-    # A repository can have parallel workflows (and even multiple CI runs).
-    run_number = run.get("run_number")
-    if isinstance(run_number, int) and not isinstance(run_number, bool) and run_number > 0:
+        return {"success": "✓", "failure": "Fehler",
+                "cancelled": "Abbruch", "timed_out": "Zeitüberschreitung"}.get(
+                    outcome, "Beendet")
+    step = progress.get("current_step_remaining_seconds")
+    entire = progress.get("estimated_remaining_seconds")
+    # A workflow cannot finish sooner than the step that is still running.
+    if (isinstance(step, (int, float)) and not isinstance(step, bool)
+            and isinstance(entire, (int, float)) and not isinstance(entire, bool)
+            and step > entire > 0):
+        entire = step
+    def minutes(value: object) -> str:
+        from math import ceil
+        return str(ceil(value / 60)) if (
+            isinstance(value, (int, float)) and not isinstance(value, bool)
+            and 0 < value < 8 * 3600) else "–"
+    current, total = minutes(step), minutes(entire)
+    if current == "–" and total == "–":
+        return "Restzeit –"
+    return f"≈{current}/{total}m"
+
+
+def activity_title(run: dict, progress: dict, repo: str,
+                   display: str = "", now: float | None = None) -> str:
+    """Immutable iOS header: repository alias, workflow and run identity.
+
+    HA Companion iOS sets 'title' at creation; subsequent pushes cannot change
+    that title. Estimated remaining time therefore belongs in 'message'.
+    """
+    name = (display.strip() if isinstance(display, str) else "") or repo.split("/")[-1]
+    number = run.get("run_number")
+    if isinstance(number, int) and not isinstance(number, bool) and number > 0:
         workflow = str(run.get("name") or "Workflow").strip() or "Workflow"
         if len(workflow) > 18:
             workflow = workflow[:17] + "…"
-        identity = f"{workflow} #{run_number}"
+        identity = f"{workflow} #{number}"
     elif run.get("id") is not None:
         identity = f"Run #{run['id']}"
     else:
@@ -204,27 +206,25 @@ def activity_title(run: dict, progress: dict, repo: str,
     if len(name) > maximum_name:
         name = name[:maximum_name - 1] + "…"
     heading = f"{name} · {identity}" if identity else name
-    # Protect the ETA/success indicator at the right of iOS's 64-char title.
-    available = 64 - len(label) - 3
-    if len(heading) > available:
-        heading = heading[:available].rstrip(" ·")
-    return f"{heading} · {label}"
+    return heading[:64]
 
 
 def activity_payload(run: dict, progress: dict, repo: str,
                      display: str = "", now: float | None = None) -> dict:
     status = str(run.get("status") or "")
     conclusion = str(run.get("conclusion") or "")
+    label = remaining_time_label(run, progress)
     if status == "completed":
-        msg = ("Erfolgreich abgeschlossen" if conclusion == "success"
-               else f"Beendet: {conclusion or 'unbekannt'}")
+        result = ("Erfolgreich abgeschlossen" if conclusion == "success"
+                  else f"Beendet: {conclusion or 'unbekannt'}")
+        msg = f"{label} · {result}"
     else:
         step = progress.get("current_step") or progress.get("current_job")
-        # The progress percentage is already shown prominently at the right
-        # of iOS Live Activity; estimated/elapsed time now belongs in the title.
-        msg = f"{step or status} · {progress.get('completed_steps', 0)}/{progress.get('total_steps', 0)} Schritte"
+        # Time is first so even a long step name cannot hide the ETA on iOS.
+        msg = (f"{label} · {step or status} · "
+               f"{progress.get('completed_steps', 0)}/{progress.get('total_steps', 0)} Schritte")
     return {
-        "title": activity_title(run, progress, repo, display, now)[:64],
+        "title": activity_title(run, progress, repo, display, now),
         "message": msg[:150],
         "data": {
             "tag": activity_tag(repo, run["id"]),
@@ -232,12 +232,13 @@ def activity_payload(run: dict, progress: dict, repo: str,
             "progress": int(progress["progress_percent"]),
             "progress_max": 100,
             "progress_bar_direction": "increasing",
-            "critical_text": f"≈{progress['progress_percent']}%" if status != "completed" else conclusion,
+            "critical_text": f"≈{progress['progress_percent']}%" if status != "completed" else label,
             "url": run.get("html_url") or f"https://github.com/{repo}/actions",
             "notification_icon": "mdi:github",
             "notification_icon_color": "#35A16B" if status != "completed"
               or conclusion == "success" else "#DF6B3B",
-            "alert_once": True,
+            # Final updates should use normal push priority, not quiet priority 5.
+            "alert_once": status != "completed",
         },
     }
 
@@ -398,17 +399,25 @@ def deliver_activity_updates(repo: str, github_token: str, ha_token: str,
         # One phone's progress cannot incorrectly suppress another phone's update.
         data["progress_percent"] = max(data["progress_percent"], int(old.get("percent", 0)))
         step = data.get("current_step") or data.get("current_job") or ""
-        title = activity_title(run, data, repo,
-                               display_name(repo, config.get("repository_aliases")), now)
+        payload = activity_payload(run, data, repo,
+                                   display_name(repo, config.get("repository_aliases")), now)
+        # The iOS title cannot change once started. Retire a tracked v0.2.1
+        # activity that had a changing ETA in its header; recreate next poll.
+        if old and old.get("title") and old["title"] != payload["title"]:
+            notify(service, ha_token, clear_payload(repo, int(run_id)))
+            del activities[run_id]
+            log(f"{repo}: retired old-format Live Activity on {service} "
+                f"for run {run_id}; will recreate")
+            continue
         if (not old
                 or data["progress_percent"] - int(old.get("percent", 0)) >= 2
                 or step != old.get("step")
-                or title != old.get("title")
+                or payload["message"] != old.get("message")
                 or now - float(old.get("sent_at", 0)) >= 180):
-            notify(service, ha_token, activity_payload(run, data, repo,
-                display_name(repo, config.get("repository_aliases")), now))
+            notify(service, ha_token, payload)
             activities[run_id] = {"percent": data["progress_percent"],
-                                  "step": step, "title": title, "sent_at": now}
+                                  "step": step, "title": payload["title"],
+                                  "message": payload["message"], "sent_at": now}
     for run_id, old in list(activities.items()):
         if "finished_at" in old:
             finished_at = float(old["finished_at"])
@@ -448,8 +457,12 @@ def deliver_activity_updates(repo: str, github_token: str, ha_token: str,
         final_payload = activity_payload(run, results[rid], repo,
                                          display_name(repo, config.get("repository_aliases")), now)
         notify(service, ha_token, final_payload)
+        # First terminal push is full priority. Retries can be quiet so
+        # they do not produce repeated sounds/vibrations on the phone.
+        quiet_retry = {**final_payload,
+                       "data": {**final_payload["data"], "alert_once": True}}
         old.update({"finished_at": now, "last_final_sent_at": now,
-                    "final_sent_count": 1, "final_payload": final_payload})
+                    "final_sent_count": 1, "final_payload": quiet_retry})
         log(f"{repo}: completion update 1/{FINAL_ACTIVITY_UPDATES} submitted "
             f"to {service} for run {run_id}")
 

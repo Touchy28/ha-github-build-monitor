@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.2 — 2026-10-12
+
+- Fix iOS Live Activities using a **static title**: the Companion App cannot change an existing Live Activity title. Show only repository alias, workflow and run number in the header.
+- Move current-step/whole-run remaining ETA into the **mutable message**, before the step name; keep progress and critical text dynamic. This stops a time estimate being frozen in the Dynamic Island header.
+- Close currently tracked pre-0.2.2 activities whose saved title contained an ETA, then recreate with a stable title on the next poll. Orphaned activities no longer present in monitor state may still require a tagged `clear_notification` from HA or manual dismissal on iPhone.
+- Send the first completion notification at normal priority (`alert_once: false`), but use quiet updates for retries to avoid repeated sounds. This improves delivery priority without claiming guaranteed APNs delivery.
+- Add regression tests for immutable title, updating ETA, legacy-title retirement and terminal states.
+
+
 ## 0.2.1 — 2026-10-12 (candidate)
 
 - Distinguish parallel GitHub workflow runs in iOS titles using the workflow name and GitHub run number (e.g. `B&B · CI #1055 · ≈–/5m`). Keep repository aliases, compact ETA and unique per-run tags.

@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "github_build_monitor"))
 
 from core import history_key, snapshot, timestamp
-from monitor import activity_title
+from monitor import remaining_time_label
 from forecast import predict
 
 REPO = "Touchy28/more-tents"
@@ -48,8 +48,7 @@ class RemainingTimesTests(unittest.TestCase):
         # after snapshot; without 3 prior complete workflows the total ETA
         # also remains unknown rather than using a guessed step sum.
         value.update(predict(REPO, RUN, [j], {}, NOW))
-        self.assertEqual(activity_title(RUN, value, REPO, "B&B"),
-                         "B&B · Run #42 · Restzeit –")
+        self.assertEqual(remaining_time_label(RUN, value), "Restzeit –")
 
     def test_overdue_step_is_unknown_not_fake_zero(self):
         j = job(started="2026-10-12T11:55:00Z")

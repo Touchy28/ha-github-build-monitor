@@ -32,17 +32,18 @@ class CompactHeadlineTests(unittest.TestCase):
     def test_no_redundant_github_prefix_and_time_visible(self):
         now = monitor.timestamp("2026-10-12T10:03:40Z")
         payload = monitor.activity_payload(run(), progress(), REPO, now=now)
-        self.assertEqual(payload["title"], "more-tents · CI #1055 · Restzeit –")
+        self.assertEqual(payload["title"], "more-tents · CI #1055")
         self.assertNotIn("GitHub · ", payload["title"])
         self.assertNotIn("ca. 3", payload["message"])
         self.assertIn("12/23 Schritte", payload["message"])
         self.assertEqual(payload["data"]["critical_text"], "≈35%")
         self.assertEqual(payload["data"]["tag"], monitor.activity_tag(REPO, 731))
 
-    def test_time_estimate_goes_into_title_when_available(self):
+    def test_time_estimate_goes_into_mutable_message_when_available(self):
         payload = monitor.activity_payload(run(), progress(61, 720), REPO,
                                            display="B&B")
-        self.assertEqual(payload["title"], "B&B · CI #1055 · ≈2/12m")
+        self.assertEqual(payload["title"], "B&B · CI #1055")
+        self.assertIn("≈2/12m", payload["message"])
         self.assertNotIn("noch ca.", payload["message"])
         self.assertEqual(payload["data"]["progress"], 35)
 
@@ -50,43 +51,45 @@ class CompactHeadlineTests(unittest.TestCase):
         payload = monitor.activity_payload(run(status="completed"), progress(),
                                            REPO, display="B&B",
                                            now=monitor.timestamp("2026-10-12T14:00:00Z"))
-        self.assertEqual(payload["title"], "B&B · CI #1055 · ✓")
+        self.assertEqual(payload["title"], "B&B · CI #1055")
+        self.assertIn("✓", payload["message"])
         self.assertIn("Erfolgreich", payload["message"])
 
     def test_very_long_alias_keeps_time_suffix(self):
         payload = monitor.activity_payload(run(), progress(60, 720), REPO,
                                            display="Langer Kürzelname der Anwendung")
-        self.assertTrue(payload["title"].endswith("· ≈1/12m"))
+        self.assertTrue(payload["message"].startswith("≈1/12m"))
         self.assertLessEqual(len(payload["title"]), 35)
 
     def test_remaining_is_step_over_total_not_elapsed_or_eta_range(self):
         now = monitor.timestamp("2026-10-12T11:45:00Z")
         payload = monitor.activity_payload(run(), progress(50, 690), REPO,
                                            display="B&B", now=now)
-        self.assertEqual(payload["title"], "B&B · CI #1055 · ≈1/12m")
+        self.assertEqual(payload["title"], "B&B · CI #1055")
+        self.assertIn("≈1/12m", payload["message"])
         self.assertNotIn("⏱", payload["title"])
 
     def test_missing_step_eta_keeps_total_and_unknown_marker(self):
-        self.assertEqual(monitor.activity_title(run(), progress(None, 690), REPO, "B&B"),
-                         "B&B · CI #1055 · ≈–/12m")
-        self.assertEqual(monitor.activity_title(run(), progress(50, None), REPO, "B&B"),
-                         "B&B · CI #1055 · ≈1/–m")
-        self.assertEqual(monitor.activity_title(run(), progress(), REPO, "B&B"),
-                         "B&B · CI #1055 · Restzeit –")
+        self.assertEqual(monitor.remaining_time_label(run(), progress(None, 690)),
+                         "≈–/12m")
+        self.assertEqual(monitor.remaining_time_label(run(), progress(50, None)),
+                         "≈1/–m")
+        self.assertEqual(monitor.remaining_time_label(run(), progress()),
+                         "Restzeit –")
 
     def test_total_eta_cannot_be_less_than_step_remaining(self):
-        self.assertEqual(monitor.activity_title(run(), progress(300, 60), REPO, "B&B"),
-                         "B&B · CI #1055 · ≈5/5m")
+        self.assertEqual(monitor.remaining_time_label(run(), progress(300, 60)),
+                         "≈5/5m")
 
     def test_running_eta_rounded_up_and_no_fabricated_zero(self):
-        self.assertEqual(monitor.activity_title(run(), progress(1, 61), REPO, "B&B"),
-                         "B&B · CI #1055 · ≈1/2m")
-        self.assertEqual(monitor.activity_title(run(), progress(0, -1), REPO, "B&B"),
-                         "B&B · CI #1055 · Restzeit –")
+        self.assertEqual(monitor.remaining_time_label(run(), progress(1, 61)),
+                         "≈1/2m")
+        self.assertEqual(monitor.remaining_time_label(run(), progress(0, -1)),
+                         "Restzeit –")
 
     def test_missing_run_start_does_not_invent_remaining_time(self):
         bare = {"id": 731, "status": "queued"}
-        self.assertEqual(monitor.activity_title(bare, progress(), REPO), "more-tents · Run #731 · Restzeit –")
+        self.assertEqual(monitor.activity_title(bare, progress(), REPO), "more-tents · Run #731")
 
 
 class RepoAliasTests(unittest.TestCase):

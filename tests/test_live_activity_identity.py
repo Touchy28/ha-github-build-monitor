@@ -36,15 +36,16 @@ def state():
 
 
 class RunIdentityTests(unittest.TestCase):
-    def test_title_contains_workflow_and_run_number_before_eta(self):
+    def test_title_contains_fixed_workflow_and_run_number(self):
         progress = {"current_step_remaining_seconds": None,
                     "estimated_remaining_seconds": 250}
         title = monitor.activity_title(run(42, 1055), progress, REPO, "B&B")
-        self.assertEqual(title, "B&B · CI #1055 · ≈–/5m")
+        self.assertEqual(title, "B&B · CI #1055")
+        self.assertEqual(monitor.remaining_time_label(run(42, 1055), progress), "≈–/5m")
         self.assertLessEqual(len(title), 64)
         another = monitor.activity_title(run(43, 94, "Switch prototype"),
                                          progress, REPO, "B&B")
-        self.assertEqual(another, "B&B · Switch prototype #94 · ≈–/5m")
+        self.assertEqual(another, "B&B · Switch prototype #94")
         self.assertNotEqual(title, another)
 
     def test_long_alias_and_workflow_preserve_number_and_finish(self):
@@ -53,7 +54,7 @@ class RunIdentityTests(unittest.TestCase):
                 "completed", "success"),
             {}, REPO, "Repository with a really long display name")
         self.assertIn("#1055", result)
-        self.assertTrue(result.endswith("✓"))
+        self.assertTrue(result.endswith("#1055"))
         self.assertLessEqual(len(result), 64)
 
     def test_parallel_runs_are_distinct_on_phone_and_sensor(self):
@@ -75,7 +76,45 @@ class RunIdentityTests(unittest.TestCase):
         self.assertEqual(len(payloads), 2)
         self.assertNotEqual(payloads[0]["data"]["tag"], payloads[1]["data"]["tag"])
         self.assertIn("CI #1055", payloads[0]["title"])
+        self.assertNotIn("≈", payloads[0]["title"])
+        self.assertIn("Restzeit –", payloads[0]["message"])
         self.assertIn("Switch prototype #94", payloads[1]["title"])
+
+    def test_old_eta_header_is_retired_before_new_static_header_starts(self):
+        current = state()
+        old = {"42": {"percent": 35, "step": "Old step",
+                      "title": "B&B · CI #1055 · ≈–/5m",
+                      "sent_at": 1791800010}}
+        current["activity_targets"] = {PHONE: {REPO: old}}
+        with mock.patch.object(monitor, "runs_for", return_value=[run(42, 1055)]), \
+             mock.patch.object(monitor, "jobs_for", return_value=[]), \
+             mock.patch.object(monitor, "set_sensor"), \
+             mock.patch.object(monitor, "notify") as notify:
+            monitor.monitor_repository(REPO, "", "TOKEN", config(), current, {}, 1791800050)
+            self.assertEqual(notify.call_count, 1)
+            self.assertEqual(notify.call_args.args[2]["message"], "clear_notification")
+            self.assertFalse(old)
+            monitor.monitor_repository(REPO, "", "TOKEN", config(), current, {}, 1791800110)
+            self.assertEqual(notify.call_count, 2)
+            self.assertEqual(notify.call_args.args[2]["title"], "B&B · CI #1055")
+            self.assertIn("Restzeit –", notify.call_args.args[2]["message"])
+
+    def test_title_stays_same_when_ETA_and_status_change(self):
+        running = run(42, 1055)
+        done = run(42, 1055, status="completed", conclusion="success")
+        early = monitor.activity_payload(running,
+                  {"progress_percent": 30, "estimated_remaining_seconds": 600},
+                  REPO, "B&B")
+        late = monitor.activity_payload(running,
+                  {"progress_percent": 95, "estimated_remaining_seconds": 30},
+                  REPO, "B&B")
+        final = monitor.activity_payload(done,
+                  {"progress_percent": 100}, REPO, "B&B")
+        self.assertEqual(early["title"], late["title"])
+        self.assertEqual(early["title"], final["title"])
+        self.assertNotEqual(early["message"], late["message"])
+        self.assertTrue(final["message"].startswith("✓"))
+        self.assertFalse(final["data"]["alert_once"])
 
     def test_successful_primary_run_has_no_active_details(self):
         current = state()
