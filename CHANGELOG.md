@@ -3,6 +3,8 @@
 ## 0.1.5 — geplant, PR #2 (noch nicht veröffentlicht)
 
 - Home-Assistant-Ingress-Weboberfläche zum Anzeigen lokaler Lernzeiten pro Repository und Workflow.
+- GitHub-Token liest die autorisierten Repositories über `GET /user/repos` ein; Checkbox-Auswahl statt manueller Repository-Eingabe in der Weboberfläche.
+- Server-seitige Repository-Liste, Cache und CSRF-geschützte Auswahl; bestehende Konfiguration bleibt beim Upgrade erhalten.
 - Darstellung der Gesamt- und Wartezeiten, Runner-Familien und gelernten GitHub-Schritte.
 - Bestätigtes Zurücksetzen einzelner Repositories oder aller Lerndaten, ohne Zugangsdaten und App-Konfiguration zu verändern.
 - Zurücksetzungen werden im Monitor-Thread ausgeführt und stören aktive GitHub-Überwachung nicht.
