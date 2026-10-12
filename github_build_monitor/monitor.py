@@ -296,6 +296,26 @@ def migrate_history(data_dir: Path, history: dict) -> dict:
     return history
 
 
+def clear_legacy_notifications(data_dir: Path, state: dict, service: str,
+                               ha_token: str) -> None:
+    """Remove v0.1.0 per-repository tags once before using per-run tags."""
+    if state.get("v010_notifications_checked"):
+        return
+    old = read_json(data_dir / "github-build-monitor-state/notifications-v1.json", {})
+    active_repos = [repo for repo, entry in old.items()
+                    if isinstance(entry, dict) and entry.get("active")]
+    if active_repos:
+        if not service:
+            return
+        notify_service(service)
+        for repo in active_repos:
+            # The original tag format used a SHA256 repository digest of length 16.
+            tag = "ghrunner_" + hashlib.sha256(repo.lower().encode()).hexdigest()[:16]
+            notify(service, ha_token, {"message": "clear_notification", "data": {"tag": tag}})
+        log(f"Cleared {len(active_repos)} old v0.1.0 notification tags")
+    state["v010_notifications_checked"] = True
+
+
 def main() -> None:
     ha_token = os.environ.get("SUPERVISOR_TOKEN", "")
     if not ha_token:
@@ -320,6 +340,11 @@ def main() -> None:
                 log(f"Live Activity disabled until configured: {exc}")
                 config["live_activity_enabled"] = False
         now = time.time()
+        try:
+            clear_legacy_notifications(
+                DATA_DIR, state, config.get("live_activity_notify_service", ""), ha_token)
+        except (RuntimeError, OSError, ValueError) as exc:
+            log(f"Legacy Live Activity cleanup will retry: {exc}")
         for repo in repos:
             try:
                 monitor_repository(repo, token, ha_token, config, state, history, now)
