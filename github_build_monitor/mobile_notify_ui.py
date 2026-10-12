@@ -68,6 +68,11 @@ def selector_html(service: str, services: list[str] | None, csrf: str,
         body.append(f'<p class="warning" role="alert">{escape(error)}</p>')
     if message:
         body.append(f'<p class="note">{escape(message)}</p>')
+    body.append(
+        '<form method="get" action="./">'
+        '<button type="submit" class="neutral" name="refresh_mobile" value="1">'
+        '↻ Geräte aus Home Assistant neu einlesen</button></form>'
+    )
     if services is None:
         body.append('<p class="muted">Die bestehende Einstellung bleibt erhalten.</p>')
     elif not services:
