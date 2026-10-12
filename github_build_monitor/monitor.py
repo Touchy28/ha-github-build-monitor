@@ -20,6 +20,7 @@ from core import (activity_tag, history_key, learn, notify_service, repositories
 from forecast import observe, predict, workflow_key
 from learning_store import learning_allowed, reset_history
 from learning_ui import start as start_learning_ui
+from mobile_notify import effective_service
 from repo_selection import effective_repositories
 
 API_URL = "https://api.github.com"
@@ -380,6 +381,39 @@ def apply_pending_learning_reset(data_dir: Path, history: dict) -> bool:
     return True
 
 
+def reconcile_mobile_target(target: str, original: str, state: dict,
+                            ha_token: str) -> str:
+    """End old iPhone activities before switching the notification recipient.
+
+    A selection can change on disk during a running build. Never leave old
+    notifications orphaned and never send updates to both destinations.
+    If clearing fails temporarily, retain the old target and retry later.
+    """
+    previous = state.get("active_mobile_notify_service")
+    if not isinstance(previous, str):
+        previous = original
+    if previous == target:
+        state["active_mobile_notify_service"] = target
+        return target
+    if previous:
+        for repo, activities in state.get("activities", {}).items():
+            for run_id in list(activities):
+                try:
+                    notify(previous, ha_token, clear_payload(repo, int(run_id)))
+                except (RuntimeError, OSError, ValueError, TypeError) as exc:
+                    log(f"Cannot switch mobile device yet; old notification "
+                        f"cleanup will retry: {exc}")
+                    return previous
+                del activities[run_id]
+    else:
+        # No prior service is known to receive a clear call.
+        state["activities"] = {}
+    state["active_mobile_notify_service"] = target
+    log("Changed Live Activity destination" if target else
+        "Live Activity destination unset")
+    return target
+
+
 def main() -> None:
     ha_token = os.environ.get("SUPERVISOR_TOKEN", "")
     if not ha_token:
@@ -401,7 +435,12 @@ def main() -> None:
         # Apply changes before polling so old GitHub runs are not learned again.
         apply_pending_learning_reset(DATA_DIR, history)
         # As in working v0.1.0, configuration changes take effect without a restart.
-        config = read_json(DATA_DIR / "options.json", {})
+        native_options = read_json(DATA_DIR / "options.json", {})
+        config = dict(native_options)
+        config["live_activity_notify_service"] = reconcile_mobile_target(
+            effective_service(native_options, DATA_DIR),
+            str(native_options.get("live_activity_notify_service") or ""),
+            state, ha_token)
         repos = effective_repositories(config, DATA_DIR)
         token = str(config.get("github_api_token") or "")
         interval = max(30, min(300, int(config.get("poll_interval_seconds", 60))))
