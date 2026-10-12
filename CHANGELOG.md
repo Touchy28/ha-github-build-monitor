@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.7 — vorbereitet (PR)
+
+- Mobile-Companion-App-Auswahlliste statt manueller Eingabe von `live_activity_notify_service`: Dienste serverseitig über die HA REST API entdecken.
+- Zentraler Dropdown unter Einstellungen mit Cache/Refresh und sicherem Fallback zur nativen HA-Konfiguration.
+- Gerätewechsel schließt bereits aktive Benachrichtigungen auf dem alten Ziel; bei Push-Fehlern wird der Wechsel später erneut versucht.
+- CSRF-geschützte Auswahl, nur registrierte `notify.mobile_app_*`-Dienste, keine zusätzliche Netzwerkfreigabe.
+- Sicherheits- und Regressionstests.
+
+
 ## 0.1.6 — 2026-10-12
 
 - Added **← Zurück zu Apps** navigation from HA Ingress to the Home Assistant app overview.
