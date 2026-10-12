@@ -200,7 +200,7 @@ def activity_title(run: dict, progress: dict, repo: str,
         identity = f"Run #{run['id']}"
     else:
         identity = ""
-    maximum_name = 16 if identity else 20
+    maximum_name = 12 if identity else 20
     if len(name) > maximum_name:
         name = name[:maximum_name - 1] + "…"
     heading = f"{name} · {identity}" if identity else name
