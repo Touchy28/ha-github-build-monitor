@@ -13,7 +13,8 @@ _NOTIFY = re.compile(r"^(?:notify\.)?mobile_app_[a-zA-Z0-9_]+$")
 def repositories(options: dict) -> list[str]:
     result, seen = [], set()
     for value in options.get("repositories") or []:
-        if not isinstance(value, str) or not _REPO.fullmatch(value):
+        if (not isinstance(value, str) or not _REPO.fullmatch(value)
+                or any(part in (".", "..") for part in value.split("/"))):
             continue
         if value.casefold() not in seen:
             seen.add(value.casefold())
