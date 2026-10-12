@@ -195,7 +195,7 @@ def settings_panel(data_dir: Path, mobile_html: str = "", expand: bool = False) 
         'Zur HA-App-Konfiguration ↗</a></p>'
         '<p class="muted"><small>Die native Home-Assistant-Registerkarte „Konfiguration“ '
         'kann eine App technisch nicht umleiten. Klicke in der App-Übersicht auf '
-        'GitHub Build Monitor → Konfiguration, um Token und Benachrichtigungen '
+        'GitHub Build Monitor → Konfiguration, um Token, Aktivierung und Intervall '
         'zu ändern.</small></p></div></details>'
     )
 
