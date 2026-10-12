@@ -73,6 +73,34 @@ class UpgradeRegressionTests(unittest.TestCase):
         sent = [call.kwargs.get('data') for call in post.call_args_list]
         self.assertTrue(any(v and v.get('message') == 'clear_notification' for v in sent))
 
+    def test_unmeasured_step_does_not_fake_time_progress(self):
+        run = {'status': 'in_progress', 'name': 'Build', 'id': 10}
+        job = {'name': 'build', 'status': 'in_progress', 'steps': [
+            {'name': 'compile', 'status': 'in_progress',
+             'started_at': '2026-10-12T00:00:00Z'}]}
+        now = core.timestamp('2026-10-12T00:05:00Z')
+        data = core.snapshot('Touchy28/more-tents', run, [job], {}, now=now)
+        self.assertEqual(data['progress_percent'], 0)
+        self.assertIsNone(data['estimated_remaining_seconds'])
+
+    def test_legacy_live_tag_cleanup_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            olddir = root / 'github-build-monitor-state'
+            olddir.mkdir()
+            (olddir / 'notifications-v1.json').write_text(
+                json.dumps({'Touchy28/more-tents': {'active': True, 'run_id': '42'}}))
+            state = {}
+            with mock.patch.object(monitor, 'notify') as send:
+                monitor.clear_legacy_notifications(
+                    root, state, 'notify.mobile_app_test', 'test-token')
+                self.assertEqual(send.call_count, 1)
+                self.assertEqual(send.call_args.args[2]['message'], 'clear_notification')
+                self.assertTrue(send.call_args.args[2]['data']['tag'].startswith('ghrunner_'))
+                monitor.clear_legacy_notifications(
+                    root, state, 'notify.mobile_app_test', 'test-token')
+                self.assertEqual(send.call_count, 1)
+
 
 if __name__ == '__main__':
     unittest.main()
