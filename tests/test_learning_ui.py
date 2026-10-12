@@ -66,6 +66,16 @@ class HistoryResetTests(unittest.TestCase):
         rows = learning_store.summary(data, [REPO])
         self.assertEqual(rows[0]["workflows"][0]["name"], "Publish Home Assistant app")
 
+    def test_step_breakdown_nested_by_job(self):
+        records = history()
+        rows = learning_store.step_breakdown(records, REPO, "Publish Home Assistant app")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["job"], "publish")
+        self.assertEqual(rows[0]["steps"][0]["name"], "Flutter")
+        self.assertEqual(rows[0]["steps"][0]["samples"], 3)
+        self.assertEqual(rows[0]["steps"][0]["median_seconds"], 255)
+        self.assertEqual(learning_store.step_breakdown(records, REPO, "Other"), [])
+
     def test_reset_one_preserves_other_repository(self):
         data = history()
         cutoff = core.timestamp("2026-10-12T06:00:00Z")
@@ -262,6 +272,9 @@ class WebTests(unittest.TestCase):
         self.assertIn('class="workflow-fold"', html)
         self.assertIn('class="time-fold"', html)
         self.assertIn('class="runner-fold"', html)
+        self.assertIn('Gelernte Schrittzeiten', html)
+        self.assertIn('📂 publish', html)
+        self.assertIn('Flutter', html)
         self.assertIn('class="reset-fold"', html)
         # Each level uses native <details> (no open attribute -> collapsed).
         self.assertNotIn('<details class="repo-fold" open', html)
