@@ -402,7 +402,7 @@ class LearningHandler(BaseHTTPRequestHandler):
             override_active=selection_file(self.server.data_dir).exists())
         page = render(self.server.data_dir, self.server.csrf, queued=queued,
                       repositories_html=section, mobile_html=mobile_html,
-                      expand_settings=saved_mobile or bool(mobile_error))
+                      expand_settings=saved_mobile or bool(mobile_error) or query.get("refresh_mobile") == ["1"])
         return self.respond(200, page, "text/html; charset=utf-8")
 
     def do_POST(self) -> None:
