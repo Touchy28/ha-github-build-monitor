@@ -18,7 +18,8 @@ from urllib.parse import parse_qs, urlsplit
 from learning_store import reset_description, step_breakdown, summary
 from repo_selection import effective_repositories, store_selection
 from repo_selection_ui import cached_available, get_available, selector_html
-from mobile_notify import clear_service, effective_service, save_service, selection_file
+from mobile_notify import (clear_service, effective_services, friendly_label,
+                           saved_aliases, save_services, selection_file)
 from mobile_notify_ui import (cached_services, get_services,
                               selector_html as mobile_selector_html)
 
@@ -99,6 +100,14 @@ details[open]>summary { margin-bottom: 7px; }
                       overflow-wrap: anywhere }
 .repository-details small { font-size: .78rem; margin-top: 2px }
 .neutral { background: #33586b }
+.mobile-choice { padding: 10px 3px; border-bottom: 1px solid #dce4e9 }
+.mobile-choice-label { display:flex; gap:12px; align-items:center; }
+.mobile-choice-label input { width:22px; height:22px; flex-shrink:0 }
+.mobile-choice-label span { display:flex; flex-direction:column; min-width:0; overflow-wrap:anywhere }
+.mobile-choice-label small { font-weight:normal; font-size:.76rem }
+.alias-label { display:block; font-size:.85rem; margin:8px 0 0 33px }
+.alias-label input { display:block; min-height:40px; width:100%; padding:8px;
+                     border:1px solid #b8c6d2; border-radius:8px; font:inherit }
 .warning { padding: 10px; background: #fce4e0; color: #6f201c;
            border-radius: 9px }
 form { margin: 12px 0 0 }
@@ -171,7 +180,10 @@ def settings_panel(data_dir: Path, mobile_html: str = "", expand: bool = False) 
     settings = read_json(data_dir / "options.json")
     token_status = "Hinterlegt" if settings.get("github_api_token") else "Nicht hinterlegt"
     enabled = "Aktiviert" if settings.get("live_activity_enabled") else "Deaktiviert"
-    service = escape(effective_service(settings, data_dir) or "Nicht eingestellt")
+    choices = effective_services(settings, data_dir)
+    names = saved_aliases(data_dir)
+    service = escape(", ".join(names.get(name) or friendly_label(name) for name in choices)
+                     or "Keine Geräte ausgewählt")
     polling = settings.get("poll_interval_seconds", 60)
     try:
         interval = max(30, min(300, int(polling)))
@@ -189,7 +201,7 @@ def settings_panel(data_dir: Path, mobile_html: str = "", expand: bool = False) 
         f'<div class="metric"><b>{interval} Sek.</b><span>GitHub-Abfrage</span></div>'
         f'<div class="metric"><b>{enabled}</b><span>iPhone-Live-Aktivitäten</span></div>'
         '</div>'
-        f'<p class="muted">Benachrichtigungsdienst: <code>{service}</code></p>'
+        f'<p class="muted">Benachrichtigungsgeräte: <strong>{service}</strong></p>'
         + mobile_html
         + '<p><a class="back-link" href="/hassio" target="_top" rel="noopener noreferrer">'
         'Zur HA-App-Konfiguration ↗</a></p>'
@@ -393,13 +405,15 @@ class LearningHandler(BaseHTTPRequestHandler):
         devices, mobile_error = get_services(
             self.server, refresh=query.get("refresh_mobile") == ["1"])
         saved_mobile = query.get("notify") == ["saved"]
-        mobile_service = effective_service(options, self.server.data_dir)
+        mobile_services = effective_services(options, self.server.data_dir)
+        mobile_aliases = saved_aliases(self.server.data_dir)
         mobile_html = mobile_selector_html(
-            mobile_service, devices, self.server.csrf,
+            mobile_services[0] if mobile_services else "", devices, self.server.csrf,
             message=("Zielgerät gespeichert. Der Monitor übernimmt es beim nächsten "
                      "Prüfzyklus." if saved_mobile else ""),
             error=mobile_error,
-            override_active=selection_file(self.server.data_dir).exists())
+            override_active=selection_file(self.server.data_dir).exists(),
+            selected=mobile_services, aliases=mobile_aliases)
         page = render(self.server.data_dir, self.server.csrf, queued=queued,
                       repositories_html=section, mobile_html=mobile_html,
                       expand_settings=saved_mobile or bool(mobile_error) or query.get("refresh_mobile") == ["1"])
@@ -417,28 +431,36 @@ class LearningHandler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             return self.respond(400, b"Invalid content length")
-        max_length = 100_000 if route == "/repositories" else 2048
+        max_length = 100_000 if route in ("/repositories", "/notify-service") else 2048
         if length < 1 or length > max_length:
             return self.respond(413, b"Invalid body length")
-        fields = parse_qs(self.rfile.read(length).decode("utf-8", "strict"))
+        fields = parse_qs(self.rfile.read(length).decode("utf-8", "strict"), keep_blank_values=True)
         if fields.get("csrf") != [self.server.csrf]:
             return self.respond(403, b"Invalid CSRF token")
         if route == "/notify-service":
-            choice = fields.get("service", [])
-            if len(choice) != 1:
-                return self.respond(400, b"Choose exactly one device.")
-            selected = choice[0]
-            if selected == "__native__":
+            if fields.get("use_native") == ["1"]:
                 with self.server.reset_lock:
                     clear_service(self.server.data_dir)
             else:
                 available_services = cached_services(self.server)
                 if available_services is None:
                     return self.respond(409, b"Device list expired; refresh it.")
-                if selected not in available_services:
-                    return self.respond(400, b"Device not present in HA service list.")
-                with self.server.reset_lock:
-                    save_service(self.server.data_dir, selected)
+                listed = fields.get("listed", [])
+                names = fields.get("alias", [])
+                targets = fields.get("target", [])
+                if (len(listed) != len(names) or len(listed) > 50
+                        or len(set(listed)) != len(listed)):
+                    return self.respond(400, b"Invalid device form.")
+                if set(listed) != set(available_services) or any(
+                        target not in available_services for target in targets):
+                    return self.respond(400, b"Unknown device in request.")
+                if len(set(targets)) != len(targets):
+                    return self.respond(400, b"Duplicate device.")
+                try:
+                    with self.server.reset_lock:
+                        save_services(self.server.data_dir, targets, dict(zip(listed, names)))
+                except (ValueError, TypeError):
+                    return self.respond(400, b"Invalid selection or display name.")
             self.send_response(303)
             self.send_header("Location", "./?notify=saved#settings")
             self.send_header("Content-Length", "0")

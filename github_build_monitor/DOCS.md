@@ -28,3 +28,18 @@ Unter **Einstellungen → Zielgerät für Live-Aktivitäten** zeigt die Weboberf
 - Es werden ausschließlich Dienste angezeigt, die mit `mobile_app_` beginnen; `notify.send_message` und andere Aktionen werden nicht angeboten.
 - Home Assistant muss den Dienst über die Companion App registriert haben. Wenn kein Dienst gefunden wird, bleibt der bisherige Wert erhalten und es erscheint ein Hinweis.
 - Die Liste wird alle 90 Sekunden neu ermittelt oder auf Wunsch per Knopfdruck aktualisiert.
+
+
+## Freundliche Gerätenamen und mehrere Live-Aktivitäten (v0.1.8)
+
+Unter **Einstellungen → Geräte für Live-Aktivitäten** lassen sich mehrere
+registrierte Companion-App-Geräte gleichzeitig auswählen. Die IDs erscheinen
+verständlich als „iPhone von Matthias“ statt `mobile_app_iphone_von_matthias`.
+Im Feld **Anzeigename (optional)** kannst du sie beispielsweise als
+„Matthias · iPhone“, „Familien-iPad“ oder „Testgerät“ umbenennen.
+Die Benachrichtigungen gehen gleichzeitig an alle angehakten Ziele, mit
+getrenntem Fortschritt und automatischer Bereinigung beim Abschluss.
+
+Die alte Einzelgeräte-Auswahl wird automatisch übernommen. Keine manuelle
+Migration nötig. Entfernst du ein Häkchen, bleibt die App auf den übrigen
+Geräten aktiv. 

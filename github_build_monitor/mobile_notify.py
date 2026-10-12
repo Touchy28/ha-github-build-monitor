@@ -32,16 +32,9 @@ def clear_service(data_dir: Path) -> None:
 
 
 def effective_service(options: dict, data_dir: Path) -> str:
-    """A saved web UI choice takes priority; otherwise old HA options win."""
-    existing = str(options.get("live_activity_notify_service") or "")
-    try:
-        saved = json.loads(selection_file(data_dir).read_text(encoding="utf-8"))
-        choice = saved.get("service")
-        if not isinstance(choice, str):
-            return existing
-        return normalize(choice)
-    except (ValueError, TypeError, OSError, AttributeError):
-        return existing
+    """Backward-compatible primary notification target."""
+    return next(iter(effective_services(options, data_dir)), "")
+
 
 
 def save_service(data_dir: Path, service: str) -> None:
@@ -103,3 +96,84 @@ def friendly_label(service: str) -> str:
     clean = normalize(service)
     suffix = clean.removeprefix("mobile_app_")
     return suffix.replace("_", " ").strip().title()
+
+
+
+def effective_services(options: dict, data_dir: Path) -> list[str]:
+    """Read new list, v0.1.7 saved single value, or native HA option."""
+    try:
+        saved = json.loads(selection_file(data_dir).read_text(encoding="utf-8"))
+        if isinstance(saved, dict) and isinstance(saved.get("services"), list):
+            return validated_services(saved["services"])
+        if isinstance(saved, dict) and isinstance(saved.get("service"), str):
+            return [normalize(saved["service"])]
+    except (OSError, ValueError, TypeError):
+        pass
+    original = options.get("live_activity_notify_service") or ""
+    try:
+        return [normalize(original)] if original else []
+    except ValueError:
+        return []
+
+
+def validated_services(values: list[str]) -> list[str]:
+    if not isinstance(values, list) or len(values) > 50:
+        raise ValueError("Ungültige Geräteauswahl.")
+    result = []
+    for name in values:
+        target = normalize(name)
+        if target in result:
+            raise ValueError("Gerät doppelt ausgewählt.")
+        result.append(target)
+    return result
+
+
+def saved_aliases(data_dir: Path) -> dict[str, str]:
+    try:
+        raw = json.loads(selection_file(data_dir).read_text(encoding="utf-8"))
+        aliases = raw.get("aliases", {})
+    except (OSError, ValueError, TypeError, AttributeError):
+        return {}
+    if not isinstance(aliases, dict):
+        return {}
+    result = {}
+    for service, name in aliases.items():
+        try:
+            normalized = normalize(service)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(name, str) and 0 < len(name.strip()) <= 48:
+            result[normalized] = name.strip()
+    return result
+
+
+def save_services(data_dir: Path, services: list[str],
+                  aliases: dict[str, str] | None = None) -> None:
+    """Only selection + display names are stored, never Supervisor credentials."""
+    chosen = validated_services(services)
+    names = saved_aliases(data_dir) if aliases is None else {}
+    if aliases is not None:
+        for service, name in aliases.items():
+            key = normalize(service)
+            if not isinstance(name, str) or len(name) > 48:
+                raise ValueError("Ungültiger Anzeigename.")
+            if name.strip():
+                names[key] = name.strip()
+    file = selection_file(data_dir)
+    file.parent.mkdir(parents=True, exist_ok=True)
+    tmp = file.with_name(file.name + ".tmp")
+    tmp.write_text(json.dumps({"services": chosen, "aliases": names},
+                              ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, file)
+
+
+def friendly_label(service: str) -> str:
+    """Turn machine IDs into legible labels without guessing another person's name."""
+    words = normalize(service).removeprefix("mobile_app_").split("_")
+    replacements = {
+        "iphone": "iPhone", "ipad": "iPad", "ios": "iOS",
+        "imac": "iMac", "macbook": "MacBook", "pixel": "Pixel",
+        "android": "Android", "von": "von", "der": "der", "und": "und",
+    }
+    return " ".join(replacements.get(part.casefold(), part.capitalize())
+                    for part in words)

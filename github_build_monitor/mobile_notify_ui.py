@@ -38,77 +38,80 @@ def cached_services(server) -> list[str] | None:
 
 def selector_html(service: str, services: list[str] | None, csrf: str,
                   message: str = "", error: str = "",
-                  override_active: bool = False) -> str:
-    current = ""
-    try:
-        current = normalize(service) if service else ""
-    except ValueError:
-        current = ""
-    options: list[str] = []
-    if services is not None:
-        for item in services:
-            try:
-                key = normalize(item)
-            except ValueError:
-                continue
-            selected = " selected" if key == current and override_active else ""
-            options.append(
-                f'<option value="{escape(key, quote=True)}"{selected}>'
-                f'{escape(friendly_label(key))} · {escape("notify." + key)}</option>'
-            )
-    current_label = escape(current) if current else "Nicht eingerichtet"
+                  override_active: bool = False,
+                  selected: list[str] | None = None,
+                  aliases: dict[str, str] | None = None) -> str:
+    """Compact multi-device selector with editable display names.
+
+    Each displayed row has both a checkbox and an optional friendly name.
+    Hidden listed targets make submitted name mapping unambiguous even when
+    only some checkboxes are checked (native HTML, no JavaScript).
+    """
+    selected = [service] if selected is None and service else (selected or [])
+    chosen = set(selected)
+    aliases = aliases or {}
     body = [
-        '<div class="notify-picker">',
-        '<h3>📱 Zielgerät für Live-Aktivitäten</h3>',
-        f'<p class="muted">Aktuell: <code>{current_label}</code></p>',
-        '<p class="muted">Die Liste stammt direkt aus Home Assistant. '
-        'Es werden ausschließlich Companion-App-Benachrichtigungsdienste angeboten.</p>',
+        '<div class="notify-picker"><h3>📱 Geräte für Live-Aktivitäten</h3>',
+        f'<p class="muted"><strong>{len(chosen)} ausgewählt</strong>. '
+        'Du kannst mehrere Geräte benachrichtigen und die Namen anpassen.</p>',
+        '<form method="get" action="./">'
+        '<button type="submit" class="neutral" name="refresh_mobile" value="1">'
+        '↻ Geräte aus Home Assistant neu einlesen</button></form>'
     ]
     if error:
         body.append(f'<p class="warning" role="alert">{escape(error)}</p>')
     if message:
         body.append(f'<p class="note">{escape(message)}</p>')
-    body.append(
-        '<form method="get" action="./">'
-        '<button type="submit" class="neutral" name="refresh_mobile" value="1">'
-        '↻ Geräte aus Home Assistant neu einlesen</button></form>'
-    )
     if services is None:
         body.append('<p class="muted">Die bestehende Einstellung bleibt erhalten.</p>')
     elif not services:
-        body.append(
-            '<p class="warning">Keine <code>notify.mobile_app_*</code>-Dienste gefunden. '
-            'Prüfe die Home-Assistant-Companion-App und die Push-Berechtigung.</p>'
-        )
-    if (services is None or not services) and override_active:
+        body.append('<p class="warning">Keine Companion-App-Geräte gefunden. '
+                    'Prüfe die registrierten Benachrichtigungsdienste.</p>')
+    if services:
+        body.extend([
+            '<form action="notify-service" method="post">',
+            f'<input type="hidden" name="csrf" value="{escape(csrf, quote=True)}">',
+            '<div class="repository-list">'
+        ])
+        for item in services:
+            try:
+                key = normalize(item)
+            except ValueError:
+                continue
+            title = aliases.get(key) or friendly_label(key)
+            checked = " checked" if key in chosen else ""
+            body.extend([
+                '<div class="mobile-choice">',
+                f'<label class="mobile-choice-label"><input type="checkbox" name="target" '
+                f'value="{escape(key, quote=True)}"{checked}>',
+                f'<span><strong>{escape(title)}</strong><small>notify.{escape(key)}</small>'
+                '</span></label>',
+                f'<input type="hidden" name="listed" value="{escape(key, quote=True)}">',
+                '<label class="alias-label">Anzeigename (optional)',
+                f'<input type="text" name="alias" maxlength="48" '
+                f'value="{escape(aliases.get(key, ""), quote=True)}" '
+                f'placeholder="{escape(friendly_label(key), quote=True)}"></label>',
+                '</div>'
+            ])
+        body.extend([
+            '</div><p class="muted">Nicht gewählte Geräte erhalten keine '
+            'neuen Live-Aktivitäten. Beim Abwählen wird eine bestehende '
+            'Aktivität dort beendet.</p>',
+            '<button type="submit">Geräteauswahl speichern</button></form>'
+        ])
+        missing = chosen - set(services)
+        if missing:
+            body.append('<p class="warning">Ein bisher gewähltes Gerät ist in '
+                        'Home Assistant nicht mehr registriert: ' +
+                        ", ".join(escape(name) for name in sorted(missing)) + '</p>')
+    if override_active:
         body.append(
             '<form action="notify-service" method="post">'
             f'<input type="hidden" name="csrf" value="{escape(csrf, quote=True)}">'
-            '<input type="hidden" name="service" value="__native__">'
-            '<button type="submit" class="neutral">Zur HA-App-Konfiguration zurückkehren'
-            '</button></form>'
+            '<button class="neutral" type="submit" name="use_native" value="1">'
+            'Wert aus HA-App-Konfiguration verwenden</button></form>'
         )
-    if services:
-        if current and current not in services:
-            body.append(
-                '<p class="warning">Der bisherige Dienst ist aktuell nicht in der '
-                'HA-Diensteliste vorhanden. Er wird nicht automatisch geändert.</p>'
-            )
-        body += [
-            '<form action="notify-service" method="post">',
-            f'<input type="hidden" name="csrf" value="{escape(csrf, quote=True)}">',
-            '<label for="mobile-target"><strong>Benachrichtigungsziel auswählen</strong></label>',
-            '<select id="mobile-target" name="service" required>',
-            '<option value="__native__"' + ('' if override_active else ' selected')
-            + '>Wert aus HA-App-Konfiguration verwenden</option>',
-            "".join(options),
-            '</select>',
-            '<div class="picker-buttons"><button type="submit">Gerät speichern</button></div>',
-            '</form>',
-        ]
-    body.append(
-        '<p class="muted"><small>Die Geräteauswahl aus der Weboberfläche hat Vorrang '
-        'vor dem alten Textfeld in der HA-App-Konfiguration. '
-        'Du kannst das Ziel später jederzeit ändern oder auf den HA-Wert zurückschalten.</small></p></div>'
-    )
+    body.append('<p class="muted"><small>Gerätenamen dienen ausschließlich der '
+                'Anzeige. Der Versand erfolgt weiterhin an die technischen '
+                'Home-Assistant-Dienste.</small></p></div>')
     return "".join(body)

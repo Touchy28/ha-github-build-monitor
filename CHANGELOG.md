@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.8 — 2026-10-12
+
+- Verständliche Namen für mobile Benachrichtigungsdienste und frei vergebbare Anzeigenamen.
+- Mehrfachauswahl von Companion-App-Geräten per Checkbox statt nur einem Empfänger.
+- Getrenntes Monitoring der Live-Aktivitäten je Gerät: Start, Status, Abschluss und Entfernen.
+- Übernahme alter v0.1.7-Einstellungen und noch laufender Live-Aktivitäten; kein erneutes Eingeben der bisherigen Geräte erforderlich.
+- Gezielt nur abgewählte Empfänger bereinigen; Push-Fehler beim Entfernen werden später erneut versucht.
+- Keine neuen HA- oder GitHub-Berechtigungen; Token und Supervisor-Optionen bleiben unverändert.
+- Zusätzliche Unit-Tests für mehrere Telefone, Aliasnamen, Migration und Fehlerfälle.
+
+
 ## 0.1.7 — vorbereitet (PR)
 
 - Mobile-Companion-App-Auswahlliste statt manueller Eingabe von `live_activity_notify_service`: Dienste serverseitig über die HA REST API entdecken.

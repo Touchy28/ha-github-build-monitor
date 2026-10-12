@@ -20,7 +20,7 @@ from core import (activity_tag, history_key, learn, notify_service, repositories
 from forecast import observe, predict, workflow_key
 from learning_store import learning_allowed, reset_history
 from learning_ui import start as start_learning_ui
-from mobile_notify import effective_service
+from mobile_notify import effective_service, effective_services
 from repo_selection import effective_repositories
 
 API_URL = "https://api.github.com"
@@ -253,24 +253,51 @@ def monitor_repository(repo: str, github_token: str, ha_token: str,
                   + f" ({data['completed_steps']}/{data['total_steps']} steps)")
             state["log_state"][repo] = label
 
-    activities = state.setdefault("activities", {}).setdefault(repo, {})
-    service = config.get("live_activity_notify_service", "")
+    selected = config.get("live_activity_notify_services")
+    if selected is None:
+        service = config.get("live_activity_notify_service", "")
+        selected = [service] if service else []
+    if not isinstance(selected, list):
+        selected = []
+    activity_targets = state.setdefault("activity_targets", {})
+    if not activity_targets and "activities" in state and selected:
+        # Compat with direct v0.1.7 calls and their single-target persisted state.
+        activity_targets[selected[0]] = state["activities"]
+    for service in selected:
+        activities = activity_targets.setdefault(service, {}).setdefault(repo, {})
+        try:
+            deliver_activity_updates(
+                repo, github_token, ha_token, service,
+                activities, config, now, relevant, recent_by_id,
+                results, jobs_cache, history
+            )
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError) as exc:
+            # One unreachable phone must not suppress updates to all other devices.
+            log(f"Live Activity delivery to {service} failed; will retry: {exc}")
+    state["activities"] = activity_targets.get(selected[0], {}) if selected else {}
+
+
+def deliver_activity_updates(repo: str, github_token: str, ha_token: str,
+                             service: str, activities: dict, config: dict,
+                             now: float, relevant: list[dict],
+                             recent_by_id: dict[int, dict], results: dict[int, dict],
+                             jobs_cache: dict[int, list[dict]], history: dict) -> None:
+    """Per-device progress/finish bookkeeping: every phone is independent."""
     if not config.get("live_activity_enabled"):
-        # Original v0.1.0 removed active notifications when the toggle was switched off.
-        if activities and service:
+        if activities:
             notify_service(service)
             for run_id in list(activities):
                 notify(service, ha_token, clear_payload(repo, int(run_id)))
                 del activities[run_id]
         return
-    notify_service(service)  # never accept an arbitrary HA service
+    notify_service(service)
     for run in relevant:
         if not is_active(run, now):
             continue
         run_id = str(run["id"])
-        data = results[int(run_id)]
+        data = dict(results[int(run_id)])
         old = activities.get(run_id) or {}
-        # Never allow a live bar to move backward for the same run.
+        # One phone's progress cannot incorrectly suppress another phone's update.
         data["progress_percent"] = max(data["progress_percent"], int(old.get("percent", 0)))
         step = data.get("current_step") or data.get("current_job") or ""
         if (not old
@@ -290,7 +317,6 @@ def monitor_repository(repo: str, github_token: str, ha_token: str,
         if run is not None and is_active(run, now):
             continue
         if run is None:
-            # No longer in GitHub's last 20 runs: end stale notification.
             notify(service, ha_token, clear_payload(repo, int(run_id)))
             del activities[run_id]
             continue
@@ -414,6 +440,45 @@ def reconcile_mobile_target(target: str, original: str, state: dict,
     return target
 
 
+def reconcile_mobile_targets(desired: list[str], original: str,
+                             state: dict, ha_token: str) -> list[str]:
+    """Migrate v0.1.7 single activity state and retire only deselected phones.
+
+    On temporary push failures, retain the old recipient's tracking state
+    and retry closing their activities next time. No other device is blocked.
+    """
+    previous = state.get("active_mobile_notify_services")
+    if not isinstance(previous, list):
+        old = state.get("active_mobile_notify_service") or original
+        previous = [old] if old else []
+    device_data = state.setdefault("activity_targets", {})
+    if previous and not state.get("activity_targets_migrated_v018"):
+        legacy = state.get("activities", {})
+        if isinstance(legacy, dict) and legacy:
+            device_data.setdefault(previous[0], legacy)
+    state["activity_targets_migrated_v018"] = True
+    retired = []
+    for device in list(device_data):
+        if device in desired:
+            continue
+        for repo, activities in list(device_data[device].items()):
+            for run_id in list(activities):
+                try:
+                    notify(device, ha_token, clear_payload(repo, int(run_id)))
+                except (RuntimeError, OSError, ValueError, TypeError) as exc:
+                    log(f"Could not close old Live Activity on {device}: {exc}")
+                    break
+                del activities[run_id]
+        if all(not runs for runs in device_data[device].values()):
+            retired.append(device)
+    for device in retired:
+        del device_data[device]
+    state["active_mobile_notify_services"] = list(desired)
+    state["active_mobile_notify_service"] = desired[0] if desired else ""
+    state["activities"] = device_data.setdefault(desired[0], {}) if desired else {}
+    return desired
+
+
 def main() -> None:
     ha_token = os.environ.get("SUPERVISOR_TOKEN", "")
     if not ha_token:
@@ -437,19 +502,25 @@ def main() -> None:
         # As in working v0.1.0, configuration changes take effect without a restart.
         native_options = read_json(DATA_DIR / "options.json", {})
         config = dict(native_options)
-        config["live_activity_notify_service"] = reconcile_mobile_target(
-            effective_service(native_options, DATA_DIR),
+        selected_devices = reconcile_mobile_targets(
+            effective_services(native_options, DATA_DIR),
             str(native_options.get("live_activity_notify_service") or ""),
             state, ha_token)
+        config["live_activity_notify_services"] = selected_devices
+        config["live_activity_notify_service"] = selected_devices[0] if selected_devices else ""
         repos = effective_repositories(config, DATA_DIR)
         token = str(config.get("github_api_token") or "")
         interval = max(30, min(300, int(config.get("poll_interval_seconds", 60))))
         if config.get("live_activity_enabled"):
-            try:
-                notify_service(config.get("live_activity_notify_service", ""))
-            except ValueError as exc:
-                log(f"Live Activity disabled until configured: {exc}")
+            if not selected_devices:
                 config["live_activity_enabled"] = False
+            else:
+                try:
+                    for target in selected_devices:
+                        notify_service(target)
+                except ValueError as exc:
+                    log(f"Live Activity disabled until configured: {exc}")
+                    config["live_activity_enabled"] = False
         now = time.time()
         try:
             clear_legacy_notifications(
@@ -457,19 +528,20 @@ def main() -> None:
                 ha_token, repos)
         except (RuntimeError, OSError, ValueError) as exc:
             log(f"Legacy Live Activity cleanup will retry: {exc}")
-        # An unchecked repository must not leave a stale HA sensor or Live Activity.
+        # A deselected repository has separate notifications on each device.
         prior = set(state.get("last_monitored_repositories") or [])
-        previous = prior | set(state.get("activities", {}))
+        tracking = state.setdefault("activity_targets", {})
+        previous = prior | {repo for data in tracking.values() for repo in data}
         for previous_repo in previous - set(repos):
-            activities = state.setdefault("activities", {}).setdefault(previous_repo, {})
-            service = config.get("live_activity_notify_service", "")
-            if activities and service:
-                try:
-                    for run_id in list(activities):
-                        notify(service, ha_token, clear_payload(previous_repo, int(run_id)))
-                        del activities[run_id]
-                except (ValueError, RuntimeError, OSError) as exc:
-                    log(f"Unable to retire {previous_repo} notification: {exc}")
+            for device, repositories_on_device in tracking.items():
+                activities = repositories_on_device.get(previous_repo, {})
+                for run_id in list(activities):
+                    try:
+                        notify(device, ha_token, clear_payload(previous_repo, int(run_id)))
+                    except (RuntimeError, OSError, ValueError) as exc:
+                        log(f"Unable to retire {previous_repo} on {device}: {exc}")
+                        break
+                    del activities[run_id]
             if previous_repo in prior:
                 try:
                     set_sensor(previous_repo, {"state": "disabled", "repository": previous_repo,

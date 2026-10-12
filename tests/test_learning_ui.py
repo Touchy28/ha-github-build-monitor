@@ -203,17 +203,23 @@ class WebTests(unittest.TestCase):
     def test_mobile_dropdown_is_discovered_and_native_service_selected(self):
         with urlopen(self.url, timeout=4) as response:
             html = response.read().decode("utf-8")
-        self.assertIn('<select id="mobile-target" name="service"', html)
+        self.assertIn('name="target"', html)
         self.assertIn("mobile_app_iphone_von_matthias", html)
         self.assertIn("mobile_app_ipad", html)
-        self.assertIn('value="__native__" selected', html)
+        self.assertIn("iPhone von Matthias", html)
+        self.assertIn('name="alias"', html)
         self.assertNotIn("TEST_HA_SUPERVISOR_SECRET", html)
 
     def test_mobile_selection_persists_separately_and_preserves_options(self):
         with urlopen(self.url, timeout=4):
             pass
-        form = urlencode({"csrf": self.server.csrf,
-                          "service": "mobile_app_ipad"}).encode("utf-8")
+        form = urlencode([
+            ("csrf", self.server.csrf),
+            ("listed", "mobile_app_ipad"), ("alias", "Familien-iPad"),
+            ("listed", "mobile_app_iphone_von_matthias"), ("alias", ""),
+            ("target", "mobile_app_ipad"),
+            ("target", "mobile_app_iphone_von_matthias"),
+        ]).encode("utf-8")
         req = Request(self.url + "notify-service", data=form, method="POST",
                       headers={"Content-Type": "application/x-www-form-urlencoded"})
         with urlopen(req, timeout=4) as response:
@@ -222,16 +228,20 @@ class WebTests(unittest.TestCase):
         from mobile_notify import effective_service, selection_file
         options = json.loads((self.root / "options.json").read_text())
         self.assertEqual(effective_service(options, self.root), "mobile_app_ipad")
+        from mobile_notify import effective_services, saved_aliases
+        self.assertEqual(effective_services(options, self.root),
+                         ["mobile_app_ipad", "mobile_app_iphone_von_matthias"])
+        self.assertEqual(saved_aliases(self.root)["mobile_app_ipad"], "Familien-iPad")
         self.assertEqual(options["live_activity_notify_service"],
                          "mobile_app_iphone_von_matthias")
-        self.assertEqual(json.loads(selection_file(self.root).read_text()),
-                         {"service": "mobile_app_ipad"})
+        self.assertEqual(json.loads(selection_file(self.root).read_text())["services"],
+                         ["mobile_app_ipad", "mobile_app_iphone_von_matthias"])
 
     def test_mobile_picker_falls_back_to_ha_option(self):
         from mobile_notify import effective_service, save_service
         save_service(self.root, "mobile_app_ipad")
         form = urlencode({"csrf": self.server.csrf,
-                          "service": "__native__"}).encode("utf-8")
+                          "use_native": "1"}).encode("utf-8")
         req = Request(self.url + "notify-service", data=form, method="POST",
                       headers={"Content-Type": "application/x-www-form-urlencoded"})
         with urlopen(req, timeout=4):
@@ -401,7 +411,7 @@ class WebTests(unittest.TestCase):
                              b"\x89PNG\r\n\x1a\n")
         configuration = (folder / "config.yaml").read_text()
         self.assertIn('panel_icon: mdi:github', configuration)
-        self.assertIn('version: "0.1.7"', configuration)
+        self.assertIn('version: "0.1.8"', configuration)
 
     def test_post_queues_and_monitor_applies(self):
         with self.post() as response:
