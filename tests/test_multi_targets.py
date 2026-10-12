@@ -54,7 +54,7 @@ class MultiTargetTests(unittest.TestCase):
             monitor.monitor_repository(REPO, "", "TOKEN", config, state, {}, 1791800020)
             self.assertEqual(send.call_count, 2)
             # Force one phone's old state to be behind so only it updates.
-            state["activity_targets"][TABLET][REPO]["42"]["percent"] = 0
+            state["activity_targets"][TABLET][REPO]["42"]["step"] = "Alter Schritt"
             monitor.monitor_repository(REPO, "", "TOKEN", config, state, {}, 1791800030)
             self.assertEqual(send.call_count, 3)
             self.assertEqual(send.call_args.args[0], TABLET)
