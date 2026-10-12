@@ -1,0 +1,28 @@
+name: "GitHub Build Monitor"
+description: "Read-only GitHub Actions monitoring with Home Assistant sensors and iPhone Live Activities"
+version: "0.1.1"
+slug: "github_build_monitor"
+url: "https://github.com/Touchy28/ha-github-build-monitor"
+arch:
+  - amd64
+  - aarch64
+startup: services
+boot: manual
+init: false
+stage: experimental
+homeassistant_api: true
+options:
+  repositories:
+    - "Touchy28/DSO-Optimizer"
+    - "Touchy28/more-tents"
+  github_api_token: ""
+  live_activity_enabled: false
+  live_activity_notify_service: ""
+  poll_interval_seconds: 60
+schema:
+  repositories:
+    - str
+  github_api_token: password
+  live_activity_enabled: bool
+  live_activity_notify_service: str
+  poll_interval_seconds: int(30,300)
