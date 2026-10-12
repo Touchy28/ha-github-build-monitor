@@ -102,5 +102,34 @@ class UpgradeRegressionTests(unittest.TestCase):
                 self.assertEqual(send.call_count, 1)
 
 
+    def test_legacy_tag_cleanup_even_with_separate_app_data(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = {"v010_notifications_checked": True}
+            repos = ['Touchy28/DSO-Optimizer', 'Touchy28/more-tents']
+            sent = []
+            with mock.patch.object(monitor, 'notify',
+                                   side_effect=lambda service, token, payload: sent.append(payload)):
+                monitor.clear_legacy_notifications(
+                    Path(directory), state, 'notify.mobile_app_test', 'test-token', repos)
+                self.assertEqual({item['data']['tag'] for item in sent}, {
+                    'ghrunner_c0e18ca008568a45',
+                    'ghrunner_18b499b9f9c7285f',
+                })
+                self.assertTrue(state['v010_legacy_tag_cleanup_v013'])
+                monitor.clear_legacy_notifications(
+                    Path(directory), state, 'notify.mobile_app_test', 'test-token', repos)
+                self.assertEqual(len(sent), 2)
+
+    def test_legacy_tag_cleanup_waits_for_phone_service(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = {}
+            with mock.patch.object(monitor, 'notify') as send:
+                monitor.clear_legacy_notifications(
+                    Path(directory), state, '', 'test-token', ['Touchy28/more-tents'])
+                send.assert_not_called()
+                self.assertNotIn('v010_legacy_tag_cleanup_v013', state)
+
+
+
 if __name__ == '__main__':
     unittest.main()
