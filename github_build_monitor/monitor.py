@@ -17,6 +17,7 @@ from urllib.request import Request, urlopen
 
 from core import (activity_tag, history_key, learn, notify_service, repositories,
                   sensor_id, snapshot, timestamp)
+from forecast import observe, predict
 
 API_URL = "https://api.github.com"
 HA_URL = "http://supervisor/core/api"
@@ -145,6 +146,10 @@ def activity_payload(run: dict, progress: dict, repo: str) -> dict:
     else:
         step = progress.get("current_step") or progress.get("current_job")
         msg = f"{step or status} · {progress.get('completed_steps', 0)}/{progress.get('total_steps', 0)} Schritte · ca. {progress['progress_percent']} %"
+        low, high = progress.get("eta_lower_seconds"), progress.get("eta_upper_seconds")
+        if low is not None and high is not None:
+            from math import ceil
+            msg += f" · noch ca. {max(1, ceil(low / 60))}–{max(1, ceil(high / 60))} Min"
     return {
         "title": f"GitHub · {repo.split('/')[-1]}"[:64],
         "message": msg[:150],
@@ -197,7 +202,25 @@ def monitor_repository(repo: str, github_token: str, ha_token: str,
         jobs = jobs_for(repo, run_id, github_token)
         jobs_cache[run_id] = jobs
         learn(repo, run, jobs, history)
+        observe(repo, run, jobs, history)
         results[run_id] = snapshot(repo, run, jobs, history, now)
+        results[run_id].update(predict(repo, run, jobs, history, now))
+    # Incrementally collect recent successful runs. Different workflow types
+    # have their own histories, and queue time matters as much as build time.
+    # Limit to one additional completed run per polling cycle for API economy.
+    seen = set(history.get("forecast", {}).get("seen", []))
+    for finished in recent:
+        key = f"{repo.casefold()}:{finished.get('id')}"
+        if (finished.get("status") == "completed"
+                and finished.get("conclusion") == "success" and key not in seen):
+            run_id = int(finished["id"])
+            jobs = jobs_cache.get(run_id)
+            if jobs is None:
+                jobs = jobs_for(repo, run_id, github_token)
+                jobs_cache[run_id] = jobs
+            learn(repo, finished, jobs, history)
+            observe(repo, finished, jobs, history)
+            break
     primary = next((r for r in relevant if is_active(r, now)), relevant[0] if relevant else None)
     if primary is None:
         set_sensor(repo, {"repository": repo, "state": "idle",
@@ -266,6 +289,7 @@ def monitor_repository(repo: str, github_token: str, ha_token: str,
             jobs = jobs_cache.get(rid) or jobs_for(repo, rid, github_token)
             learn(repo, run, jobs, history)
             results[rid] = snapshot(repo, run, jobs, history, now)
+            results[rid].update(predict(repo, run, jobs, history, now))
         notify(service, ha_token, activity_payload(run, results[rid], repo))
         old["finished_at"] = now
 
