@@ -37,16 +37,54 @@ def effective_repositories(options: dict, data_dir: Path) -> list[str]:
     return repositories(options)
 
 
-def store_selection(data_dir: Path, names: list[str]) -> None:
+def repository_aliases(data_dir: Path) -> dict[str, str]:
+    """Custom display names keyed by canonical GitHub repository (case-insensitive).
+
+    Aliases must never change GitHub API paths, HA sensor IDs or learning keys.
+    """
+    try:
+        saved = json.loads(selection_file(data_dir).read_text(encoding="utf-8"))
+        values = saved.get("aliases", {})
+    except (OSError, ValueError, TypeError, AttributeError):
+        return {}
+    if not isinstance(values, dict):
+        return {}
+    result = {}
+    for repo, alias in values.items():
+        if (isinstance(repo, str) and _REPO_NAME.fullmatch(repo)
+                and isinstance(alias, str) and 0 < len(alias.strip()) <= 32):
+            result[repo.casefold()] = alias.strip()
+    return result
+
+
+def display_name(repo: str, aliases: dict[str, str] | None = None) -> str:
+    """Prefer custom name, otherwise the GitHub repo component."""
+    return (aliases or {}).get(repo.casefold()) or repo.split("/")[-1]
+
+
+def store_selection(data_dir: Path, names: list[str],
+                    aliases: dict[str, str] | None = None) -> None:
     valid = repositories({"repositories": names})
     if len(valid) != len(names):
         raise ValueError("Invalid or duplicate repository names")
+    existing = repository_aliases(data_dir)
+    if aliases is not None:
+        existing = {}
+        for repo, alias in aliases.items():
+            if not isinstance(repo, str) or not _REPO_NAME.fullmatch(repo):
+                raise ValueError("Invalid repository alias target")
+            if not isinstance(alias, str) or len(alias) > 32:
+                raise ValueError("Repository display name too long")
+            if alias.strip():
+                existing[repo.casefold()] = alias.strip()
     target = selection_file(data_dir)
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_name(target.name + ".tmp")
+    payload = {"repositories": valid}
+    if existing:
+        payload["aliases"] = existing
     temporary.write_text(
-        json.dumps({"repositories": valid}, ensure_ascii=False, indent=2),
-        encoding="utf-8")
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(temporary, target)
 
 
