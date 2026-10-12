@@ -6,6 +6,7 @@ and HA's limited homeassistant_api connection.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import sys
@@ -14,8 +15,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
-from core import (activity_tag, learn, notify_service, repositories, sensor_id,
-                  snapshot)
+from core import (activity_tag, history_key, learn, notify_service, repositories,
+                  sensor_id, snapshot, timestamp)
 
 API_URL = "https://api.github.com"
 HA_URL = "http://supervisor/core/api"
@@ -77,22 +78,56 @@ def runs_for(repo: str, github_token: str) -> list[dict]:
 
 def jobs_for(repo: str, run_id: int, github_token: str) -> list[dict]:
     path = quote(repo, safe="/")
-    response = api_call(f"{API_URL}/repos/{path}/actions/runs/{int(run_id)}/jobs?per_page=100",
-                        token=github_token)
-    return response.get("jobs", [])
+    jobs = []
+    # Match v0.1.0: workflows can have more than 100 jobs.
+    for page in range(1, 6):
+        response = api_call(
+            f"{API_URL}/repos/{path}/actions/runs/{int(run_id)}/jobs?per_page=100&page={page}",
+            token=github_token)
+        batch = response.get("jobs") or []
+        if not isinstance(batch, list):
+            break
+        jobs.extend(job for job in batch if isinstance(job, dict))
+        if len(batch) < 100:
+            break
+    return jobs
 
 
 def set_sensor(repo: str, value: dict, ha_token: str) -> None:
     entity_id = sensor_id(repo)
-    data = {
-        "state": value.get("state", "unknown"),
-        "attributes": {
-            "friendly_name": f"GitHub Build {repo}",
-            "icon": "mdi:github",
-            **{key: item for key, item in value.items() if key != "state"}
-        }
-    }
-    api_call(f"{HA_URL}/states/{entity_id}", token=ha_token, method="POST", data=data)
+    raw_state = str(value.get("state") or "unknown")
+    outcome = str(value.get("conclusion") or "")
+    # Preserve v0.1.0 state names used by existing dashboard automations.
+    if raw_state == "completed":
+        state = {"success": "success", "failure": "failure",
+                 "timed_out": "failure", "cancelled": "cancelled"}.get(outcome, "completed")
+    elif raw_state == "in_progress":
+        state = "running"
+    elif raw_state in ("queued", "waiting", "pending", "requested"):
+        state = "queued"
+    else:
+        state = raw_state
+    attrs = {key: item for key, item in value.items() if key != "state"}
+    # Older dashboards read the following attributes directly.
+    attrs.update({
+        "status": state,
+        "progress": value.get("progress_percent", 0),
+        "steps_done": value.get("completed_steps", 0),
+        "steps_total": value.get("total_steps", 0),
+        "job": value.get("current_job", ""),
+        "step": value.get("current_step", ""),
+        "runner": value.get("runner_name", "") or "",
+        "eta_seconds": value.get("estimated_remaining_seconds"),
+        "active_runs": value.get("active_run_count", 0),
+        "url": value.get("run_url", ""),
+        "run_number": value.get("run_number"),
+        "jobs": value.get("jobs", 0),
+        "github_status": raw_state,
+        "friendly_name": f"GitHub Runner {repo}",
+        "icon": "mdi:github",
+    })
+    api_call(f"{HA_URL}/states/{entity_id}", token=ha_token, method="POST",
+             data={"state": state, "attributes": attrs})
 
 
 def notify(service: str, ha_token: str, payload: dict) -> None:
@@ -109,7 +144,7 @@ def activity_payload(run: dict, progress: dict, repo: str) -> dict:
                else f"Beendet: {conclusion or 'unbekannt'}")
     else:
         step = progress.get("current_step") or progress.get("current_job")
-        msg = f"{step or status} · ca. {progress['progress_percent']} %"
+        msg = f"{step or status} · {progress.get('completed_steps', 0)}/{progress.get('total_steps', 0)} Schritte · ca. {progress['progress_percent']} %"
     return {
         "title": f"GitHub · {repo.split('/')[-1]}"[:64],
         "message": msg[:150],
@@ -118,6 +153,9 @@ def activity_payload(run: dict, progress: dict, repo: str) -> dict:
             "live_update": True,
             "progress": int(progress["progress_percent"]),
             "progress_max": 100,
+            "progress_bar_direction": "increasing",
+            "critical_text": f"≈{progress['progress_percent']}%" if status != "completed" else conclusion,
+            "url": run.get("html_url") or f"https://github.com/{repo}/actions",
             "notification_icon": "mdi:github",
             "notification_icon_color": "#35A16B" if status != "completed"
               or conclusion == "success" else "#DF6B3B",
@@ -131,27 +169,36 @@ def clear_payload(repo: str, run_id: int) -> dict:
             "data": {"tag": activity_tag(repo, run_id)}}
 
 
-def is_active(run: dict) -> bool:
-    return run.get("status") != "completed"
+def is_active(run: dict, now: float | None = None) -> bool:
+    status = run.get("status")
+    if status not in ("queued", "in_progress", "waiting", "pending", "requested"):
+        return False
+    # Preserve v0.1.0's protection against abandoned queued runs.
+    if status != "in_progress":
+        created = timestamp(run.get("created_at"))
+        reference = time.time() if now is None else now
+        if created is not None and reference - created > 8 * 3600:
+            return False
+    return True
 
 
 def monitor_repository(repo: str, github_token: str, ha_token: str,
                        config: dict, state: dict, history: dict, now: float) -> None:
     recent = runs_for(repo, github_token)
-    relevant = [r for r in recent if is_active(r)][:6]
+    relevant = [r for r in recent if is_active(r, now)][:6]
     if not relevant and recent:
         relevant = [recent[0]]
     jobs_cache: dict[int, list[dict]] = {}
     results: dict[int, dict] = {}
     recent_by_id = {int(r["id"]): r for r in recent if r.get("id") is not None}
-    active_count = sum(1 for r in recent if is_active(r))
+    active_count = sum(1 for r in recent if is_active(r, now))
     for run in relevant:
         run_id = int(run["id"])
         jobs = jobs_for(repo, run_id, github_token)
         jobs_cache[run_id] = jobs
         learn(repo, run, jobs, history)
         results[run_id] = snapshot(repo, run, jobs, history, now)
-    primary = next((r for r in relevant if is_active(r)), relevant[0] if relevant else None)
+    primary = next((r for r in relevant if is_active(r, now)), relevant[0] if relevant else None)
     if primary is None:
         set_sensor(repo, {"repository": repo, "state": "idle",
                           "progress_percent": 0, "active_run_count": 0}, ha_token)
@@ -160,7 +207,7 @@ def monitor_repository(repo: str, github_token: str, ha_token: str,
         data["active_run_count"] = active_count
         # Progress never moves backward within the same run even when dynamic jobs are added.
         previous = state.setdefault("sensor_progress", {}).get(repo, {})
-        if previous.get("run_id") == data["run_id"] and is_active(primary):
+        if previous.get("run_id") == data["run_id"] and is_active(primary, now):
             data["progress_percent"] = max(data["progress_percent"],
                                            int(previous.get("percent", 0)))
         state["sensor_progress"][repo] = {
@@ -173,13 +220,19 @@ def monitor_repository(repo: str, github_token: str, ha_token: str,
                   + f" ({data['completed_steps']}/{data['total_steps']} steps)")
             state["log_state"][repo] = label
 
-    if not config.get("live_activity_enabled"):
-        return
-    service = config.get("live_activity_notify_service", "")
-    notify_service(service)  # never accept an arbitrary HA service
     activities = state.setdefault("activities", {}).setdefault(repo, {})
+    service = config.get("live_activity_notify_service", "")
+    if not config.get("live_activity_enabled"):
+        # Original v0.1.0 removed active notifications when the toggle was switched off.
+        if activities and service:
+            notify_service(service)
+            for run_id in list(activities):
+                notify(service, ha_token, clear_payload(repo, int(run_id)))
+                del activities[run_id]
+        return
+    notify_service(service)  # never accept an arbitrary HA service
     for run in relevant:
-        if not is_active(run):
+        if not is_active(run, now):
             continue
         run_id = str(run["id"])
         data = results[int(run_id)]
@@ -201,7 +254,7 @@ def monitor_repository(repo: str, github_token: str, ha_token: str,
                 del activities[run_id]
             continue
         run = recent_by_id.get(int(run_id))
-        if run is not None and is_active(run):
+        if run is not None and is_active(run, now):
             continue
         if run is None:
             # No longer in GitHub's last 20 runs: end stale notification.
@@ -217,31 +270,55 @@ def monitor_repository(repo: str, github_token: str, ha_token: str,
         old["finished_at"] = now
 
 
+def migrate_history(data_dir: Path, history: dict) -> dict:
+    """Import v0.1.0 learned durations when the old data directory is retained."""
+    old = read_json(data_dir / "github-build-monitor-state/history-v1.json", {})
+    if not old or history.get("v010_migration_done"):
+        return history
+    steps = history.setdefault("steps", {})
+    imported = 0
+    for encoded, durations in old.get("durations", {}).items():
+        try:
+            repo, workflow, job, step = json.loads(encoded)
+            if not isinstance(durations, list):
+                continue
+            key = history_key(str(repo), {"name": job}, {"name": step}, str(workflow))
+            if key not in steps:
+                clean = [float(n) for n in durations if isinstance(n, (int, float))
+                         and 0 < float(n) <= 7200]
+                if clean:
+                    steps[key] = clean[-20:]
+                    imported += 1
+        except (TypeError, ValueError):
+            continue
+    history["v010_migration_done"] = True
+    log(f"Imported {imported} historical step durations from v0.1.0")
+    return history
+
+
 def main() -> None:
-    config = read_json(DATA_DIR / "options.json", {})
-    repos = repositories(config)
-    if not repos:
-        log("No valid repositories configured; set owner/repository in app options")
-        return
-    token = str(config.get("github_api_token") or "")
     ha_token = os.environ.get("SUPERVISOR_TOKEN", "")
     if not ha_token:
         log("Missing SUPERVISOR_TOKEN; enable homeassistant_api")
         return
-    interval = max(30, min(300, int(config.get("poll_interval_seconds", 60))))
-    if config.get("live_activity_enabled"):
-        try:
-            notify_service(config.get("live_activity_notify_service", ""))
-        except ValueError as exc:
-            log(f"Live Activity disabled until configured: {exc}")
-            config["live_activity_enabled"] = False
-    log(f"Started: {len(repos)} repositories, poll every {interval}s,"
-        f" mobile notifications {'enabled' if config.get('live_activity_enabled') else 'disabled'}")
+    log("Started; monitoring configuration will refresh each poll")
     state_file = DATA_DIR / "monitor_state.json"
     history_file = DATA_DIR / "monitor_history.json"
     state = read_json(state_file, {})
     history = read_json(history_file, {})
+    history = migrate_history(DATA_DIR, history)
     while True:
+        # As in working v0.1.0, configuration changes take effect without a restart.
+        config = read_json(DATA_DIR / "options.json", {})
+        repos = repositories(config)
+        token = str(config.get("github_api_token") or "")
+        interval = max(30, min(300, int(config.get("poll_interval_seconds", 60))))
+        if config.get("live_activity_enabled"):
+            try:
+                notify_service(config.get("live_activity_notify_service", ""))
+            except ValueError as exc:
+                log(f"Live Activity disabled until configured: {exc}")
+                config["live_activity_enabled"] = False
         now = time.time()
         for repo in repos:
             try:
