@@ -27,6 +27,12 @@ API_URL = "https://api.github.com"
 HA_URL = "http://supervisor/core/api"
 DATA_DIR = Path(os.environ.get("BUILD_MONITOR_DATA_DIR", "/data"))
 
+# A successful HA notify call confirms acceptance by HA, not display on iOS.
+# Repeat the terminal update before retiring its Live Activity.
+FINAL_ACTIVITY_UPDATES = 3
+FINAL_ACTIVITY_RETRY_SECONDS = 60
+FINAL_ACTIVITY_MIN_VISIBLE_SECONDS = 180
+
 
 def log(message: str) -> None:
     print("[github-build-monitor] " + message, flush=True)
@@ -182,11 +188,27 @@ def activity_title(run: dict, progress: dict, repo: str,
             label = "Restzeit –"
         else:
             label = f"≈{step_minutes}/{total_minutes}m"
-    # Keep the time visible on the Dynamic Island, even with long repo names.
-    maximum_name = 20 if label else 30
+    # Keep the workflow and GitHub run number beside the repository alias.
+    # A repository can have parallel workflows (and even multiple CI runs).
+    run_number = run.get("run_number")
+    if isinstance(run_number, int) and not isinstance(run_number, bool) and run_number > 0:
+        workflow = str(run.get("name") or "Workflow").strip() or "Workflow"
+        if len(workflow) > 18:
+            workflow = workflow[:17] + "…"
+        identity = f"{workflow} #{run_number}"
+    elif run.get("id") is not None:
+        identity = f"Run #{run['id']}"
+    else:
+        identity = ""
+    maximum_name = 16 if identity else 20
     if len(name) > maximum_name:
         name = name[:maximum_name - 1] + "…"
-    return f"{name} · {label}" if label else name
+    heading = f"{name} · {identity}" if identity else name
+    # Protect the ETA/success indicator at the right of iOS's 64-char title.
+    available = 64 - len(label) - 3
+    if len(heading) > available:
+        heading = heading[:available].rstrip(" ·")
+    return f"{heading} · {label}"
 
 
 def activity_payload(run: dict, progress: dict, repo: str,
@@ -278,13 +300,37 @@ def monitor_repository(repo: str, github_token: str, ha_token: str,
             learn(repo, finished, jobs, history)
             observe(repo, finished, jobs, history)
             break
+    # Preserve the legacy single sensor, but expose *each* simultaneously
+    # active workflow as a separate record. "success" in the sensor only
+    # refers to its primary run; other runs retain their own IDs/statuses.
+    active_details = []
+    for run in relevant:
+        if not is_active(run, now):
+            continue
+        detail = results[int(run["id"])]
+        active_details.append({
+            "run_id": int(run["id"]),
+            "run_number": run.get("run_number"),
+            "workflow": run.get("name") or "GitHub Actions",
+            "status": run.get("status"),
+            "conclusion": run.get("conclusion"),
+            "head_branch": run.get("head_branch"),
+            "progress_percent": detail["progress_percent"],
+            "current_job": detail.get("current_job"),
+            "current_step": detail.get("current_step"),
+            "runner_name": detail.get("runner_name"),
+            "run_url": detail.get("run_url"),
+        })
     primary = next((r for r in relevant if is_active(r, now)), relevant[0] if relevant else None)
     if primary is None:
         set_sensor(repo, {"repository": repo, "state": "idle",
-                          "progress_percent": 0, "active_run_count": 0}, ha_token)
+                          "progress_percent": 0, "active_run_count": 0,
+                          "active_run_details": [], "primary_run_id": None}, ha_token)
     else:
         data = dict(results[int(primary["id"])])
         data["active_run_count"] = active_count
+        data["active_run_details"] = active_details
+        data["primary_run_id"] = data["run_id"]
         # Progress never moves backward within the same run even when dynamic jobs are added.
         previous = state.setdefault("sensor_progress", {}).get(repo, {})
         if previous.get("run_id") == data["run_id"] and is_active(primary, now):
@@ -344,6 +390,11 @@ def deliver_activity_updates(repo: str, github_token: str, ha_token: str,
         run_id = str(run["id"])
         data = dict(results[int(run_id)])
         old = activities.get(run_id) or {}
+        # A GitHub rerun can reactivate the same run ID after a terminal result.
+        # Start a fresh activity instead of retaining its old cleanup timer.
+        if "finished_at" in old:
+            del activities[run_id]
+            old = {}
         # One phone's progress cannot incorrectly suppress another phone's update.
         data["progress_percent"] = max(data["progress_percent"], int(old.get("percent", 0)))
         step = data.get("current_step") or data.get("current_job") or ""
@@ -360,7 +411,24 @@ def deliver_activity_updates(repo: str, github_token: str, ha_token: str,
                                   "step": step, "title": title, "sent_at": now}
     for run_id, old in list(activities.items()):
         if "finished_at" in old:
-            if now - float(old["finished_at"]) >= 30:
+            finished_at = float(old["finished_at"])
+            last_sent = float(old.get("last_final_sent_at", finished_at))
+            attempts = int(old.get("final_sent_count", 1))
+            final_payload = old.get("final_payload")
+            if (attempts < FINAL_ACTIVITY_UPDATES
+                    and now - last_sent >= FINAL_ACTIVITY_RETRY_SECONDS
+                    and isinstance(final_payload, dict)):
+                notify(service, ha_token, final_payload)
+                old["final_sent_count"] = attempts + 1
+                old["last_final_sent_at"] = now
+                log(f"{repo}: completion update {attempts + 1}/"
+                    f"{FINAL_ACTIVITY_UPDATES} submitted to {service} for run {run_id}")
+            elif ((attempts >= FINAL_ACTIVITY_UPDATES
+                   and now - last_sent >= FINAL_ACTIVITY_RETRY_SECONDS
+                   and now - finished_at >= FINAL_ACTIVITY_MIN_VISIBLE_SECONDS)
+                  or (not isinstance(final_payload, dict)
+                      and now - finished_at >= FINAL_ACTIVITY_MIN_VISIBLE_SECONDS)):
+                # Older persisted activities may not include final_payload.
                 notify(service, ha_token, clear_payload(repo, int(run_id)))
                 del activities[run_id]
             continue
@@ -377,9 +445,13 @@ def deliver_activity_updates(repo: str, github_token: str, ha_token: str,
             learn(repo, run, jobs, history)
             results[rid] = snapshot(repo, run, jobs, history, now)
             results[rid].update(predict(repo, run, jobs, history, now))
-        notify(service, ha_token, activity_payload(run, results[rid], repo,
-               display_name(repo, config.get("repository_aliases")), now))
-        old["finished_at"] = now
+        final_payload = activity_payload(run, results[rid], repo,
+                                         display_name(repo, config.get("repository_aliases")), now)
+        notify(service, ha_token, final_payload)
+        old.update({"finished_at": now, "last_final_sent_at": now,
+                    "final_sent_count": 1, "final_payload": final_payload})
+        log(f"{repo}: completion update 1/{FINAL_ACTIVITY_UPDATES} submitted "
+            f"to {service} for run {run_id}")
 
 
 def migrate_history(data_dir: Path, history: dict) -> dict:
