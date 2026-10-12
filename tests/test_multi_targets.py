@@ -96,12 +96,12 @@ class MultiTargetTests(unittest.TestCase):
              mock.patch.object(monitor, "notify") as sent:
             monitor.monitor_repository(REPO, "", "TOKEN", config, state, {}, 1791800010)
             self.assertEqual(sent.call_count, 1)
-            self.assertEqual(sent.call_args.args[2]["title"], "B&B · ≈–/11m")
+            self.assertEqual(sent.call_args.args[2]["title"], "B&B · Run #42 · ≈–/11m")
             monitor.monitor_repository(REPO, "", "TOKEN", config, state, {}, 1791800020)
             self.assertEqual(sent.call_count, 1)
             monitor.monitor_repository(REPO, "", "TOKEN", config, state, {}, 1791800050)
             self.assertEqual(sent.call_count, 2)
-            self.assertEqual(sent.call_args.args[2]["title"], "B&B · ≈–/10m")
+            self.assertEqual(sent.call_args.args[2]["title"], "B&B · Run #42 · ≈–/10m")
 
     def test_each_phone_receives_completion_then_removal(self):
         state = {"activity_targets": {}, "active_mobile_notify_services": [OLD, TABLET],
@@ -112,6 +112,8 @@ class MultiTargetTests(unittest.TestCase):
         now = 1791800010
         with mock.patch.object(monitor, "runs_for", side_effect=[
                 [run()], [run(status="completed", conclusion="success")],
+                [run(status="completed", conclusion="success")],
+                [run(status="completed", conclusion="success")],
                 [run(status="completed", conclusion="success")]]), \
              mock.patch.object(monitor, "jobs_for", return_value=[]), \
              mock.patch.object(monitor, "set_sensor"), \
@@ -121,11 +123,17 @@ class MultiTargetTests(unittest.TestCase):
             for target in (OLD, TABLET):
                 self.assertIn("finished_at", state["activity_targets"][target][REPO]["42"])
             monitor.monitor_repository(REPO, "", "TOKEN", config, state, {}, now + 120)
+            monitor.monitor_repository(REPO, "", "TOKEN", config, state, {}, now + 180)
+            for target in (OLD, TABLET):
+                self.assertEqual(state["activity_targets"][target][REPO]["42"]["final_sent_count"], 3)
+            monitor.monitor_repository(REPO, "", "TOKEN", config, state, {}, now + 240)
             by_device = {}
             for c in send.call_args_list:
                 by_device.setdefault(c.args[0], []).append(c.args[2]["message"])
             self.assertEqual(sum(x == "clear_notification" for x in by_device[OLD]), 1)
             self.assertEqual(sum(x == "clear_notification" for x in by_device[TABLET]), 1)
+            self.assertEqual(sum(x == "Erfolgreich abgeschlossen" for x in by_device[OLD]), 3)
+            self.assertEqual(sum(x == "Erfolgreich abgeschlossen" for x in by_device[TABLET]), 3)
             self.assertFalse(state["activity_targets"][OLD][REPO])
             self.assertFalse(state["activity_targets"][TABLET][REPO])
 
