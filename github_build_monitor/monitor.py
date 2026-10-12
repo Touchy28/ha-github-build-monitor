@@ -17,7 +17,10 @@ from urllib.request import Request, urlopen
 
 from core import (activity_tag, history_key, learn, notify_service, repositories,
                   sensor_id, snapshot, timestamp)
-from forecast import observe, predict
+from forecast import observe, predict, workflow_key
+from learning_store import learning_allowed, reset_history
+from learning_ui import start as start_learning_ui
+from repo_selection import effective_repositories
 
 API_URL = "https://api.github.com"
 HA_URL = "http://supervisor/core/api"
@@ -190,6 +193,11 @@ def is_active(run: dict, now: float | None = None) -> bool:
 def monitor_repository(repo: str, github_token: str, ha_token: str,
                        config: dict, state: dict, history: dict, now: float) -> None:
     recent = runs_for(repo, github_token)
+    # Restore readable names for workflow histories created by v0.1.4.
+    workflow_names = history.setdefault("workflow_names", {})
+    for known_run in recent:
+        if known_run.get("name"):
+            workflow_names[workflow_key(repo, known_run)] = str(known_run["name"])
     relevant = [r for r in recent if is_active(r, now)][:6]
     if not relevant and recent:
         relevant = [recent[0]]
@@ -212,7 +220,8 @@ def monitor_repository(repo: str, github_token: str, ha_token: str,
     for finished in recent:
         key = f"{repo.casefold()}:{finished.get('id')}"
         if (finished.get("status") == "completed"
-                and finished.get("conclusion") == "success" and key not in seen):
+                and finished.get("conclusion") == "success" and key not in seen
+                and learning_allowed(repo, finished, history)):
             run_id = int(finished["id"])
             jobs = jobs_cache.get(run_id)
             if jobs is None:
@@ -346,6 +355,31 @@ def clear_legacy_notifications(data_dir: Path, state: dict, service: str,
     state["v010_legacy_tag_cleanup_v013"] = True
     log(f"Cleared old v0.1.0 Live Activity tags for {len(known)} repositories")
 
+def apply_pending_learning_reset(data_dir: Path, history: dict) -> bool:
+    """Apply ingress reset requests in the monitoring thread (sole history writer)."""
+    path = data_dir / "reset-learning-command.json"
+    command = read_json(path, {})
+    if not command:
+        return False
+    scope = command.get("scope")
+    when = command.get("at")
+    if (not isinstance(scope, str)
+            or (scope != "all" and "/" not in scope)
+            or not isinstance(when, (int, float))
+            or not command.get("csrf_checked")):
+        log("Invalid learning reset request ignored")
+        path.unlink(missing_ok=True)
+        return False
+    request_id = f"{scope}:{when}"
+    if history.get("last_learning_reset_id") != request_id:
+        reset_history(history, scope, float(when))
+        history["last_learning_reset_id"] = request_id
+        write_json(data_dir / "monitor_history.json", history)
+        log(f"Learning history reset for {scope} (other settings preserved)")
+    path.unlink(missing_ok=True)
+    return True
+
+
 def main() -> None:
     ha_token = os.environ.get("SUPERVISOR_TOKEN", "")
     if not ha_token:
@@ -357,10 +391,18 @@ def main() -> None:
     state = read_json(state_file, {})
     history = read_json(history_file, {})
     history = migrate_history(DATA_DIR, history)
+    try:
+        start_learning_ui(DATA_DIR)
+        log("Learning dashboard active via Home Assistant Ingress")
+    except OSError as exc:
+        # Learning UI must never disable the build monitor if its port is unavailable.
+        log(f"Learning dashboard could not start; monitoring continues: {exc}")
     while True:
+        # Apply changes before polling so old GitHub runs are not learned again.
+        apply_pending_learning_reset(DATA_DIR, history)
         # As in working v0.1.0, configuration changes take effect without a restart.
         config = read_json(DATA_DIR / "options.json", {})
-        repos = repositories(config)
+        repos = effective_repositories(config, DATA_DIR)
         token = str(config.get("github_api_token") or "")
         interval = max(30, min(300, int(config.get("poll_interval_seconds", 60))))
         if config.get("live_activity_enabled"):
@@ -376,6 +418,26 @@ def main() -> None:
                 ha_token, repos)
         except (RuntimeError, OSError, ValueError) as exc:
             log(f"Legacy Live Activity cleanup will retry: {exc}")
+        # An unchecked repository must not leave a stale HA sensor or Live Activity.
+        prior = set(state.get("last_monitored_repositories") or [])
+        previous = prior | set(state.get("activities", {}))
+        for previous_repo in previous - set(repos):
+            activities = state.setdefault("activities", {}).setdefault(previous_repo, {})
+            service = config.get("live_activity_notify_service", "")
+            if activities and service:
+                try:
+                    for run_id in list(activities):
+                        notify(service, ha_token, clear_payload(previous_repo, int(run_id)))
+                        del activities[run_id]
+                except (ValueError, RuntimeError, OSError) as exc:
+                    log(f"Unable to retire {previous_repo} notification: {exc}")
+            if previous_repo in prior:
+                try:
+                    set_sensor(previous_repo, {"state": "disabled", "repository": previous_repo,
+                                               "progress_percent": 0, "active_run_count": 0}, ha_token)
+                except (ValueError, RuntimeError, OSError) as exc:
+                    log(f"Unable to mark {previous_repo} as disabled: {exc}")
+        state["last_monitored_repositories"] = list(repos)
         for repo in repos:
             try:
                 monitor_repository(repo, token, ha_token, config, state, history, now)
@@ -386,6 +448,10 @@ def main() -> None:
             finally:
                 write_json(state_file, state)
                 write_json(history_file, history)
+        # Also persist an empty selection when all repositories were unchecked.
+        if not repos:
+            write_json(state_file, state)
+            write_json(history_file, history)
         time.sleep(interval)
 
 

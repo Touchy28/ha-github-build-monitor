@@ -51,6 +51,9 @@ def observe(repo: str, run: dict, jobs: list[dict], history: dict) -> bool:
     """Learn a completed successful workflow once, including waiting time."""
     if run.get("status") != "completed" or run.get("conclusion") != "success":
         return False
+    from learning_store import learning_allowed
+    if not learning_allowed(repo, run, history):
+        return False
     start = timestamp(run.get("created_at") or run.get("run_started_at"))
     if start is None or not jobs:
         return False
@@ -78,6 +81,7 @@ def observe(repo: str, run: dict, jobs: list[dict], history: dict) -> bool:
         "seconds": round(elapsed, 1),
         "queue_seconds": round(max(0, elapsed - _union_duration(intervals)), 1),
         "runner": runner_class(jobs),
+        "workflow_name": str(run.get("name") or "GitHub Actions"),
         "jobs": sorted(str(job.get("name") or "") for job in jobs),
     }
     group = store.setdefault("workflows", {}).setdefault(workflow_key(repo, run), [])

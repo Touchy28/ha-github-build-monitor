@@ -13,7 +13,8 @@ _NOTIFY = re.compile(r"^(?:notify\.)?mobile_app_[a-zA-Z0-9_]+$")
 def repositories(options: dict) -> list[str]:
     result, seen = [], set()
     for value in options.get("repositories") or []:
-        if not isinstance(value, str) or not _REPO.fullmatch(value):
+        if (not isinstance(value, str) or not _REPO.fullmatch(value)
+                or any(part in (".", "..") for part in value.split("/"))):
             continue
         if value.casefold() not in seen:
             seen.add(value.casefold())
@@ -69,6 +70,9 @@ def expected_seconds(repo: str, job: dict, step: dict, history: dict, workflow: 
 def learn(repo: str, run: dict, jobs: list[dict], history: dict) -> bool:
     """Learn step times only once, and only from successful completed workflows."""
     if run.get("status") != "completed" or run.get("conclusion") != "success":
+        return False
+    from learning_store import learning_allowed
+    if not learning_allowed(repo, run, history):
         return False
     identity = f"{repo.lower()}:{run.get('id')}"
     learned = history.setdefault("learned_runs", [])
