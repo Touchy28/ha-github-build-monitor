@@ -92,7 +92,8 @@ def discover(token: str, *, max_pages: int = 10) -> list[dict]:
             if not isinstance(entry, dict):
                 continue
             full = entry.get("full_name")
-            if not isinstance(full, str) or not _REPO_NAME.fullmatch(full):
+            if (not isinstance(full, str) or not _REPO_NAME.fullmatch(full)
+                    or any(part in (".", "..") for part in full.split("/"))):
                 continue
             # Keep visible metadata for meaningful selection.
             result[full.casefold()] = {
