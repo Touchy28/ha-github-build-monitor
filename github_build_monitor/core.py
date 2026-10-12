@@ -70,6 +70,9 @@ def learn(repo: str, run: dict, jobs: list[dict], history: dict) -> bool:
     """Learn step times only once, and only from successful completed workflows."""
     if run.get("status") != "completed" or run.get("conclusion") != "success":
         return False
+    from learning_store import learning_allowed
+    if not learning_allowed(repo, run, history):
+        return False
     identity = f"{repo.lower()}:{run.get('id')}"
     learned = history.setdefault("learned_runs", [])
     if identity in learned:
