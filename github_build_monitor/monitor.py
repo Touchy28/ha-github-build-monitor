@@ -297,24 +297,30 @@ def migrate_history(data_dir: Path, history: dict) -> dict:
 
 
 def clear_legacy_notifications(data_dir: Path, state: dict, service: str,
-                               ha_token: str) -> None:
-    """Remove v0.1.0 per-repository tags once before using per-run tags."""
-    if state.get("v010_notifications_checked"):
+                               ha_token: str, repositories: list[str] | None = None) -> None:
+    """End old v0.1.0 per-repository activities after moving add-on sources.
+
+    The old add-on and the new repository add-on do not share /data,
+    therefore an old notifications-v1.json file may not be available.
+    Tags were deterministic, so clear them for each configured repository.
+    This cleanup runs once per app data volume after a notifier is configured.
+    """
+    if state.get("v010_legacy_tag_cleanup_v013"):
         return
     old = read_json(data_dir / "github-build-monitor-state/notifications-v1.json", {})
-    active_repos = [repo for repo, entry in old.items()
-                    if isinstance(entry, dict) and entry.get("active")]
-    if active_repos:
-        if not service:
-            return
-        notify_service(service)
-        for repo in active_repos:
-            # The original tag format used a SHA256 repository digest of length 16.
-            tag = "ghrunner_" + hashlib.sha256(repo.lower().encode()).hexdigest()[:16]
-            notify(service, ha_token, {"message": "clear_notification", "data": {"tag": tag}})
-        log(f"Cleared {len(active_repos)} old v0.1.0 notification tags")
-    state["v010_notifications_checked"] = True
-
+    known = set(repositories or [])
+    known.update(repo for repo in old
+                 if isinstance(repo, str) and "/" in repo)
+    if not known:
+        return
+    if not service:
+        return  # Try again after the user configures their phone.
+    notify_service(service)
+    for repo in sorted(known):
+        tag = "ghrunner_" + hashlib.sha256(repo.lower().encode()).hexdigest()[:16]
+        notify(service, ha_token, {"message": "clear_notification", "data": {"tag": tag}})
+    state["v010_legacy_tag_cleanup_v013"] = True
+    log(f"Cleared old v0.1.0 Live Activity tags for {len(known)} repositories")
 
 def main() -> None:
     ha_token = os.environ.get("SUPERVISOR_TOKEN", "")
@@ -342,7 +348,8 @@ def main() -> None:
         now = time.time()
         try:
             clear_legacy_notifications(
-                DATA_DIR, state, config.get("live_activity_notify_service", ""), ha_token)
+                DATA_DIR, state, config.get("live_activity_notify_service", ""),
+                ha_token, repos)
         except (RuntimeError, OSError, ValueError) as exc:
             log(f"Legacy Live Activity cleanup will retry: {exc}")
         for repo in repos:
