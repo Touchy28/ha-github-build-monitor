@@ -20,6 +20,7 @@ from core import (activity_tag, history_key, learn, notify_service, repositories
 from forecast import observe, predict, workflow_key
 from learning_store import learning_allowed, reset_history
 from learning_ui import start as start_learning_ui
+from repo_selection import effective_repositories
 
 API_URL = "https://api.github.com"
 HA_URL = "http://supervisor/core/api"
@@ -401,7 +402,7 @@ def main() -> None:
         apply_pending_learning_reset(DATA_DIR, history)
         # As in working v0.1.0, configuration changes take effect without a restart.
         config = read_json(DATA_DIR / "options.json", {})
-        repos = repositories(config)
+        repos = effective_repositories(config, DATA_DIR)
         token = str(config.get("github_api_token") or "")
         interval = max(30, min(300, int(config.get("poll_interval_seconds", 60))))
         if config.get("live_activity_enabled"):
@@ -417,6 +418,18 @@ def main() -> None:
                 ha_token, repos)
         except (RuntimeError, OSError, ValueError) as exc:
             log(f"Legacy Live Activity cleanup will retry: {exc}")
+        # An unchecked repository must not leave an orphaned Live Activity.
+        for previous_repo, activities in list(state.get("activities", {}).items()):
+            if previous_repo in repos:
+                continue
+            service = config.get("live_activity_notify_service", "")
+            if activities and service:
+                try:
+                    for run_id in list(activities):
+                        notify(service, ha_token, clear_payload(previous_repo, int(run_id)))
+                        del activities[run_id]
+                except (ValueError, RuntimeError, OSError) as exc:
+                    log(f"Unable to retire {previous_repo} notification: {exc}")
         for repo in repos:
             try:
                 monitor_repository(repo, token, ha_token, config, state, history, now)
