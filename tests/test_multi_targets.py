@@ -80,7 +80,7 @@ class MultiTargetTests(unittest.TestCase):
         self.assertEqual(state["activity_targets"][OLD][REPO], {})
         self.assertIn("42", state["activity_targets"][TABLET][REPO])
 
-    def test_remaining_time_in_title_updates_when_eta_changes(self):
+    def test_remaining_time_in_message_updates_when_eta_changes(self):
         state = {"activities": {}, "active_mobile_notify_services": [OLD],
                  "activity_targets": {}}
         monitor.reconcile_mobile_targets([OLD], OLD, state, "TOKEN")
@@ -96,12 +96,14 @@ class MultiTargetTests(unittest.TestCase):
              mock.patch.object(monitor, "notify") as sent:
             monitor.monitor_repository(REPO, "", "TOKEN", config, state, {}, 1791800010)
             self.assertEqual(sent.call_count, 1)
-            self.assertEqual(sent.call_args.args[2]["title"], "B&B · Run #42 · ≈–/11m")
+            self.assertEqual(sent.call_args.args[2]["title"], "B&B · Run #42")
+            self.assertIn("≈–/11m", sent.call_args.args[2]["message"])
             monitor.monitor_repository(REPO, "", "TOKEN", config, state, {}, 1791800020)
             self.assertEqual(sent.call_count, 1)
             monitor.monitor_repository(REPO, "", "TOKEN", config, state, {}, 1791800050)
             self.assertEqual(sent.call_count, 2)
-            self.assertEqual(sent.call_args.args[2]["title"], "B&B · Run #42 · ≈–/10m")
+            self.assertEqual(sent.call_args.args[2]["title"], "B&B · Run #42")
+            self.assertIn("≈–/10m", sent.call_args.args[2]["message"])
 
     def test_each_phone_receives_completion_then_removal(self):
         state = {"activity_targets": {}, "active_mobile_notify_services": [OLD, TABLET],
@@ -132,8 +134,8 @@ class MultiTargetTests(unittest.TestCase):
                 by_device.setdefault(c.args[0], []).append(c.args[2]["message"])
             self.assertEqual(sum(x == "clear_notification" for x in by_device[OLD]), 1)
             self.assertEqual(sum(x == "clear_notification" for x in by_device[TABLET]), 1)
-            self.assertEqual(sum(x == "Erfolgreich abgeschlossen" for x in by_device[OLD]), 3)
-            self.assertEqual(sum(x == "Erfolgreich abgeschlossen" for x in by_device[TABLET]), 3)
+            self.assertEqual(sum("Erfolgreich abgeschlossen" in x for x in by_device[OLD]), 3)
+            self.assertEqual(sum("Erfolgreich abgeschlossen" in x for x in by_device[TABLET]), 3)
             self.assertFalse(state["activity_targets"][OLD][REPO])
             self.assertFalse(state["activity_targets"][TABLET][REPO])
 
