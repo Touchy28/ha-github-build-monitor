@@ -1,0 +1,15 @@
+# Optional: in configuration.yaml oder Packages aufnehmen.
+template:
+  - sensor:
+      - name: "GitHub DSO Fortschritt"
+        unique_id: universal_github_runner_dso_progress
+        unit_of_measurement: "%"
+        icon: mdi:github
+        state: >-
+          {{ state_attr('sensor.github_runner_touchy28_dso_optimizer_c0e18c', 'progress') | int(0) }}
+      - name: "GitHub Bäume und Bienen Fortschritt"
+        unique_id: universal_github_runner_tents_progress
+        unit_of_measurement: "%"
+        icon: mdi:github
+        state: >-
+          {{ state_attr('sensor.github_runner_touchy28_more_tents_18b499', 'progress') | int(0) }}
