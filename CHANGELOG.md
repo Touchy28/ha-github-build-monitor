@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.9 — 2026-10-12
+
+- iOS Live Activity: remove redundant "GitHub ·" title prefix; show repository name or custom short display name **with time in the title**.
+- Show historical estimated remaining range (e.g. `B&B · ~3m–6m`) when available; otherwise show **elapsed** time (e.g. `more-tents · ⏱3m`). Never misrepresent elapsed time as a remaining-time forecast.
+- Shorten second line to current step + completed/total steps; percentage is already visible as right-side Live Activity value.
+- Individual repository display name/abbreviation (up to 32 characters) in web selection, learning statistic and Live Activity. Real repository URLs, IDs and learned histories remain unchanged.
+- Make mobile devices their own collapsed **Geräte auswählen** section between **Repositories** and **Einstellungen**. Use the same selection row/card styling for repositories and devices.
+- Existing device selection, GitHub token, repository monitoring, and learned timings are kept intact.
+
+
 ## 0.1.8 — 2026-10-12
 
 - Verständliche Namen für mobile Benachrichtigungsdienste und frei vergebbare Anzeigenamen.
