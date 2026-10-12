@@ -16,7 +16,8 @@ from time import time
 from urllib.parse import parse_qs, urlsplit
 
 from learning_store import reset_description, step_breakdown, summary
-from repo_selection import effective_repositories, store_selection
+from repo_selection import (display_name, effective_repositories,
+                            repository_aliases, store_selection)
 from repo_selection_ui import cached_available, get_available, selector_html
 from mobile_notify import (clear_service, effective_services, friendly_label,
                            saved_aliases, save_services, selection_file)
@@ -90,24 +91,20 @@ details[open]>summary { margin-bottom: 7px; }
                                      border: 1px solid #e1e9ed; border-radius: 10px }
 .time-fold>.fold-body,.runner-fold>.fold-body { padding-top: 3px }
 .learning-intro { margin: 20px 3px 12px }
-.repository-list { max-height: 480px; overflow-y: auto; border: 1px solid #dce4e9;
-                   border-radius: 10px; padding: 3px 10px }
-.repository-choice { display: flex; align-items: center; min-height: 52px;
-                     gap: 12px; padding: 9px 4px; border-bottom: 1px solid #e8edef }
-.repository-choice:last-child { border-bottom: 0 }
-.repository-choice input { width: 23px; height: 23px; flex-shrink: 0 }
-.repository-details { display:flex; flex-direction:column; min-width:0;
-                      overflow-wrap: anywhere }
-.repository-details small { font-size: .78rem; margin-top: 2px }
-.neutral { background: #33586b }
-.mobile-choice { padding: 10px 3px; border-bottom: 1px solid #dce4e9 }
-.mobile-choice-label { display:flex; gap:12px; align-items:center; }
-.mobile-choice-label input { width:22px; height:22px; flex-shrink:0 }
-.mobile-choice-label span { display:flex; flex-direction:column; min-width:0; overflow-wrap:anywhere }
-.mobile-choice-label small { font-weight:normal; font-size:.76rem }
-.alias-label { display:block; font-size:.85rem; margin:8px 0 0 33px }
-.alias-label input { display:block; min-height:40px; width:100%; padding:8px;
-                     border:1px solid #b8c6d2; border-radius:8px; font:inherit }
+.selection-list { max-height:490px; overflow-y:auto; border:1px solid #dce4e9;
+                  border-radius:10px; padding:3px 10px }
+.selection-choice { padding:10px 3px; border-bottom:1px solid #e8edef }
+.selection-choice:last-child { border-bottom:0 }
+.selection-choice-label { display:flex; gap:12px; align-items:center; cursor:pointer }
+.selection-choice-label input { width:23px; height:23px; flex-shrink:0 }
+.selection-choice-details { display:flex; flex-direction:column; min-width:0;
+                            overflow-wrap:anywhere }
+.selection-choice-details small { font-size:.76rem; font-weight:normal; margin-top:2px }
+.selection-alias-label { display:block; font-size:.85rem; margin:9px 0 0 35px }
+.selection-alias-label input { display:block; width:100%; min-height:42px; padding:8px;
+                              border:1px solid #b8c6d2; border-radius:8px;
+                              font:inherit; background:white; color:#18242c }
+.neutral { background:#33586b }
 .warning { padding: 10px; background: #fce4e0; color: #6f201c;
            border-radius: 9px }
 form { margin: 12px 0 0 }
@@ -118,16 +115,9 @@ button.neutral { background: #30576b }
 .note { padding: 13px; border-radius: 10px; background: #e4f4f0; color: #154a40 }
 .empty { padding: 9px 0; color: #64737d }
 code { font-size: .87em; overflow-wrap: anywhere }
-.notify-picker { margin: 18px 0; padding: 12px; border: 1px solid #dce4e9;
-                 border-radius: 12px }
-.notify-picker select { width: 100%; min-width: 0; min-height: 46px; font: inherit;
-                        border-radius: 9px; border: 1px solid #aab8c3;
-                        padding: 10px; background: #fff; color: #152b39 }
-.notify-picker label { display: block; margin-bottom: 8px }
-.picker-buttons { margin: 12px 0 0 }
+.notify-picker { margin:0; padding:0 }
 @media (prefers-color-scheme: dark) {
- .notify-picker select { background: #202b31; color: #f2f6f7; border-color: #546875 }
- .notify-picker { border-color: #40515b }
+ .selection-alias-label input { background:#202b31; color:#f2f6f7; border-color:#546875 }
 }
 @media (prefers-color-scheme: dark) {
  body { background: #11171c; color: #f2f6f7 }
@@ -135,8 +125,8 @@ code { font-size: .87em; overflow-wrap: anywhere }
  .metric,.fold-count { background: #293a43 }
  a { color: #8bc9e9 }
  small,.muted,.metric span,.empty,.fold-count { color: #bac9d1 }
- .workflow-fold,.repository-choice { border-color: #37434b }
- .repository-list,.time-fold,.runner-fold,.reset-fold { border-color: #40515b }
+ .workflow-fold,.selection-choice { border-color: #37434b }
+ .selection-list,.time-fold,.runner-fold,.reset-fold { border-color: #40515b }
  .note { background: #183b34; color: #d1f6e8 }
 }
 @media (max-width: 370px) {
@@ -175,22 +165,18 @@ GITHUB_PATH = (
 )
 
 
-def settings_panel(data_dir: Path, mobile_html: str = "", expand: bool = False) -> str:
+def settings_panel(data_dir: Path) -> str:
     """Read-only overview: Supervisor owns token and native options."""
     settings = read_json(data_dir / "options.json")
     token_status = "Hinterlegt" if settings.get("github_api_token") else "Nicht hinterlegt"
     enabled = "Aktiviert" if settings.get("live_activity_enabled") else "Deaktiviert"
-    choices = effective_services(settings, data_dir)
-    names = saved_aliases(data_dir)
-    service = escape(", ".join(names.get(name) or friendly_label(name) for name in choices)
-                     or "Keine Geräte ausgewählt")
     polling = settings.get("poll_interval_seconds", 60)
     try:
         interval = max(30, min(300, int(polling)))
     except (ValueError, TypeError):
         interval = 60
     return (
-        '<details class="card" id="settings"' + (' open' if expand else '') + '>'
+        '<details class="card" id="settings">'
         '<summary class="fold-title"><span>⚙️ Einstellungen</span>'
         '<span class="fold-count">Übersicht</span></summary><div class="fold-body">'
         '<p class="muted">Überwachung, Lernzeiten und Repository-Auswahl verwaltest du '
@@ -201,9 +187,8 @@ def settings_panel(data_dir: Path, mobile_html: str = "", expand: bool = False) 
         f'<div class="metric"><b>{interval} Sek.</b><span>GitHub-Abfrage</span></div>'
         f'<div class="metric"><b>{enabled}</b><span>iPhone-Live-Aktivitäten</span></div>'
         '</div>'
-        f'<p class="muted">Benachrichtigungsgeräte: <strong>{service}</strong></p>'
-        + mobile_html
-        + '<p><a class="back-link" href="/hassio" target="_top" rel="noopener noreferrer">'
+        '<p>Benachrichtigungsgeräte lassen sich oben unter „Geräte auswählen“ verwalten.</p>'
+        '<p><a class="back-link" href="/hassio" target="_top" rel="noopener noreferrer">'
         'Zur HA-App-Konfiguration ↗</a></p>'
         '<p class="muted"><small>Die native Home-Assistant-Registerkarte „Konfiguration“ '
         'kann eine App technisch nicht umleiten. Klicke in der App-Übersicht auf '
@@ -214,13 +199,15 @@ def settings_panel(data_dir: Path, mobile_html: str = "", expand: bool = False) 
 
 def render(data_dir: Path, csrf: str, queued: bool = False,
            repositories_html: str = "", mobile_html: str = "",
-           expand_settings: bool = False) -> bytes:
+           expand_devices: bool = False) -> bytes:
     history = read_json(data_dir / "monitor_history.json")
     configured = effective_repositories(read_json(data_dir / "options.json"), data_dir)
     records = summary(history, configured)
+    aliases = repository_aliases(data_dir)
     cards = []
     for entry in records:
-        name = escape(entry["repository"])
+        name = escape(display_name(entry["repository"], aliases))
+        canonical = escape(entry["repository"])
         summary_caption = (
             f'{entry["workflow_samples"]} Läufe · {entry["step_samples"]} Schritt-Messungen'
         )
@@ -308,6 +295,7 @@ def render(data_dir: Path, csrf: str, queued: bool = False,
             '<section class="card"><details class="repo-fold">'
             f'<summary class="fold-title"><span>📦 {name}</span>'
             f'<span class="fold-count">{escape(summary_caption)}</span></summary>'
+            f'<p class="muted"><small>{canonical}</small></p>'
             '<div class="fold-body"><div class="stats">'
             f'<div class="metric"><b>{entry["workflow_samples"]}</b>'
             '<span>Workflow-Messungen</span></div>'
@@ -343,9 +331,16 @@ def render(data_dir: Path, csrf: str, queued: bool = False,
         '<p class="muted">Überwachung · Repositories · Lernstatistik</p></div></header>'
         '<nav class="topnav" aria-label="Bereiche">'
         '<a href="#repositories">Repositories</a>'
+        '<a href="#devices">Geräte</a>'
         '<a href="#settings">Einstellungen</a>'
         '<a href="#learning">Lernstatistik</a></nav>'
-        + notification + repositories_html + settings_panel(data_dir, mobile_html, expand_settings)
+        + notification + repositories_html
+        + '<details class="card" id="devices"' + (' open' if expand_devices else '') + '>'
+        '<summary class="fold-title"><span>📱 Geräte auswählen</span>'
+        '<span class="fold-count">' + str(len(effective_services(
+            read_json(data_dir / "options.json"), data_dir))) + ' aktiv</span></summary>'
+        '<div class="fold-body">' + mobile_html + '</div></details>'
+        + settings_panel(data_dir)
         + '<section id="learning" class="learning-intro"><h2>⏱ Lernstatistik</h2>'
         '<p class="muted">Tippe auf ein Repository, dann auf einen Workflow. '
         'Zeitwerte und Runner lassen sich einzeln aufklappen.</p></section>'
