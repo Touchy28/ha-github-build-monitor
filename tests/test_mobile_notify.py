@@ -114,6 +114,12 @@ class MobileNotifyTests(unittest.TestCase):
         self.assertIn("bestehende Einstellung bleibt erhalten", html)
         self.assertIn("Cannot connect", html)
 
+    def test_native_fallback_available_during_api_error(self):
+        html = mobile_notify_ui.selector_html(
+            OLD, None, "csrf", error="Home Assistant offline", override_active=True)
+        self.assertIn('name="service" value="__native__"', html)
+        self.assertIn("Zur HA-App-Konfiguration zurückkehren", html)
+
     def test_switch_clears_old_notification_and_new_target_is_active(self):
         state = {
             "activities": {"Touchy28/more-tents": {"42": {"percent": 51}}},
