@@ -15,8 +15,9 @@ from threading import Lock, Thread
 from time import time
 from urllib.parse import parse_qs, urlsplit
 
-from core import repositories
 from learning_store import reset_description, summary
+from repo_selection import effective_repositories, store_selection
+from repo_selection_ui import cached_available, get_available, selector_html
 
 
 def read_json(path: Path) -> dict:
@@ -53,6 +54,18 @@ small, .muted { color: #51616d }
 .metric span { font-size: 0.82rem; color: #536673 }
 .workflow { border-top: 1px solid #e5ebee; padding: 10px 0 }
 details { margin-top: 14px }
+.repository-list { max-height: 480px; overflow-y: auto; border: 1px solid #dce4e9;
+                   border-radius: 10px; padding: 3px 12px; }
+.repository-choice { display: flex; align-items: center; min-height: 52px;
+                     gap: 12px; padding: 9px 4px; border-bottom: 1px solid #e8edef; }
+.repository-choice:last-child { border-bottom: 0 }
+.repository-choice input { width: 23px; height: 23px; flex-shrink: 0 }
+.repository-details { display:flex; flex-direction:column; min-width:0;
+                      overflow-wrap: anywhere }
+.repository-details small { font-size: .78rem; margin-top: 2px }
+.neutral { background: #33586b }
+.warning { padding: 10px; background: #fce4e0; color: #6f201c;
+           border-radius: 9px }
 summary { cursor: pointer; font-weight: 600 }
 form { margin-top: 12px }
 button { background: #aa3a2b; color: white; font-size: .94rem;
@@ -86,9 +99,10 @@ def reset_form(scope: str, label: str, csrf: str) -> str:
     )
 
 
-def render(data_dir: Path, csrf: str, queued: bool = False) -> bytes:
+def render(data_dir: Path, csrf: str, queued: bool = False,
+           repositories_html: str = "") -> bytes:
     history = read_json(data_dir / "monitor_history.json")
-    configured = repositories(read_json(data_dir / "options.json"))
+    configured = effective_repositories(read_json(data_dir / "options.json"), data_dir)
     records = summary(history, configured)
     cards = []
     for entry in records:
@@ -130,8 +144,8 @@ def render(data_dir: Path, csrf: str, queued: bool = False) -> bytes:
         cards.append(f'<section class="card"><h2>{name}</h2>'
                      f'<div class="stats">{metrics}</div>{"".join(parts)}</section>')
     if not cards:
-        cards = ['<section class="card"><p>Bitte mindestens ein Repository in den '
-                 'App-Optionen auswählen.</p></section>']
+        cards = ['<section class="card"><p>Aktuell ist kein Repository zur Überwachung ausgewählt. '
+                 'Wähle oben Repositories aus GitHub aus.</p></section>']
     toast = ('<p class="note">Zurücksetzung vorgemerkt. Der Monitor führt sie im '
              'nächsten Prüfzyklus aus. Danach diese Seite aktualisieren.</p>'
              if queued else '')
@@ -144,7 +158,7 @@ def render(data_dir: Path, csrf: str, queued: bool = False) -> bytes:
         '<p class="muted">Lokale Erfahrungswerte je Repository und Workflow. '
         'Nur erfolgreich abgeschlossene Builds fließen in die Prognose ein. '
         '<a href="./">↻ Anzeige aktualisieren</a></p></header>'
-        + toast + "".join(cards)
+        + toast + repositories_html + "".join(cards)
         + '<section class="card"><h2>Alle Lerndaten zurücksetzen</h2>'
         '<p class="muted">Setzt die gesammelten Zeiten aller Repositories zurück, '
         'ohne GitHub-Token, Einstellungen, Sensoren oder Live-Aktivitäten zu löschen. '
@@ -186,15 +200,25 @@ class LearningHandler(BaseHTTPRequestHandler):
         path = urlsplit(self.path)
         if path.path not in ("/", ""):
             return self.respond(404, b"Not found")
-        from urllib.parse import parse_qs
-        queued = parse_qs(path.query).get("reset") == ["queued"]
-        page = render(self.server.data_dir, self.server.csrf, queued=queued)
+        query = parse_qs(path.query)
+        queued = query.get("reset") == ["queued"]
+        options = read_json(self.server.data_dir / "options.json")
+        selected = effective_repositories(options, self.server.data_dir)
+        available, problem = get_available(self.server, str(options.get("github_api_token") or ""),
+                                           refresh=query.get("refresh") == ["1"])
+        message = ("Auswahl gespeichert. Der Monitor übernimmt sie beim nächsten Prüfzyklus."
+                   if query.get("selection") == ["saved"] else "")
+        section = selector_html(selected, available, self.server.csrf,
+                                message=message, error=problem or "")
+        page = render(self.server.data_dir, self.server.csrf, queued=queued,
+                      repositories_html=section)
         return self.respond(200, page, "text/html; charset=utf-8")
 
     def do_POST(self) -> None:
         if not self.trusted():
             return self.respond(403, b"Only Home Assistant Ingress is allowed.")
-        if urlsplit(self.path).path != "/reset":
+        route = urlsplit(self.path).path
+        if route not in ("/reset", "/repositories"):
             return self.respond(404, b"Not found")
         if self.headers.get("Content-Type", "").split(";", 1)[0] != "application/x-www-form-urlencoded":
             return self.respond(415, b"Unsupported content type")
@@ -205,10 +229,35 @@ class LearningHandler(BaseHTTPRequestHandler):
         if length < 1 or length > 2048:
             return self.respond(413, b"Invalid body length")
         fields = parse_qs(self.rfile.read(length).decode("utf-8", "strict"))
-        if fields.get("csrf") != [self.server.csrf] or fields.get("confirm") != ["yes"]:
-            return self.respond(403, b"Invalid or missing confirmation")
+        if fields.get("csrf") != [self.server.csrf]:
+            return self.respond(403, b"Invalid CSRF token")
+        if route == "/repositories":
+            options = read_json(self.server.data_dir / "options.json")
+            token = str(options.get("github_api_token") or "")
+            available = cached_available(self.server, token)
+            if available is None:
+                return self.respond(409, b"Repository-Liste abgelaufen. Bitte erneut aus GitHub laden.")
+            available_by_name = {entry["full_name"].casefold(): entry["full_name"]
+                                 for entry in available}
+            selections = fields.get("repository", [])
+            if len(selections) > 1000 or len(selections) != len(set(name.casefold() for name in selections)):
+                return self.respond(400, b"Invalid repository selection")
+            if any(name.casefold() not in available_by_name for name in selections):
+                return self.respond(400, b"Repository not authorized for this token")
+            chosen = [available_by_name[name.casefold()] for name in selections]
+            with self.server.reset_lock:
+                store_selection(self.server.data_dir, chosen)
+            self.send_response(303)
+            self.send_header("Location", "./?selection=saved")
+            self.send_header("Content-Length", "0")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            return
+        if fields.get("confirm") != ["yes"]:
+            return self.respond(403, b"Missing confirmation")
         scope = fields.get("scope", [""])[0]
-        allowed = repositories(read_json(self.server.data_dir / "options.json"))
+        allowed = effective_repositories(read_json(self.server.data_dir / "options.json"),
+                                         self.server.data_dir)
         if scope != "all" and scope not in allowed:
             return self.respond(400, b"Unknown repository")
         with self.server.reset_lock:
@@ -233,6 +282,8 @@ def start(data_dir: Path, port: int = 8099, host: str = "0.0.0.0",
     server.data_dir = data_dir
     server.csrf = token_urlsafe(32)
     server.reset_lock = Lock()
+    server.repositories_lock = Lock()
+    server.repositories_cache = {}
     # HA Supervisor's documented ingress proxy IP. No direct LAN access.
     server.allowed_peers = ({"172.30.32.2"} if allowed_peers is None
                             else allowed_peers)
