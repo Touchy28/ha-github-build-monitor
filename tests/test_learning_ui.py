@@ -130,6 +130,7 @@ class WebTests(unittest.TestCase):
         (self.root / "options.json").write_text(json.dumps({
             "github_api_token": "SECRET_DO_NOT_SHOW",
             "repositories": [REPO, DSO],
+            "live_activity_notify_service": "mobile_app_iphone_von_matthias",
         }))
         (self.root / "monitor_history.json").write_text(json.dumps(history()))
         self.github_repos = [
@@ -143,14 +144,20 @@ class WebTests(unittest.TestCase):
         self.github_fetch = mock.patch("repo_selection_ui.discover",
                                        return_value=self.github_repos)
         self.github_fetcher = self.github_fetch.start()
+        self.mobile_fetch = mock.patch("mobile_notify_ui.discover_mobile_services",
+                                       return_value=["mobile_app_ipad",
+                                                     "mobile_app_iphone_von_matthias"])
+        self.mobile_fetcher = self.mobile_fetch.start()
         self.server = learning_ui.start(self.root, port=0, host="127.0.0.1",
                                         allowed_peers={"127.0.0.1"})
+        self.server.ha_token = "TEST_HA_SUPERVISOR_SECRET"
         self.url = "http://127.0.0.1:" + str(self.server.server_address[1]) + "/"
 
     def tearDown(self):
         self.server.shutdown()
         self.server.server_close()
         self.github_fetch.stop()
+        self.mobile_fetch.stop()
         self.temp.cleanup()
 
     def test_secure_html_without_token(self):
@@ -192,6 +199,85 @@ class WebTests(unittest.TestCase):
                          ["Touchy28/new-project"])
         self.assertEqual(options["repositories"], [REPO, DSO])
         self.assertEqual(options["github_api_token"], "SECRET_DO_NOT_SHOW")
+
+    def test_mobile_dropdown_is_discovered_and_native_service_selected(self):
+        with urlopen(self.url, timeout=4) as response:
+            html = response.read().decode("utf-8")
+        self.assertIn('<select id="mobile-target" name="service"', html)
+        self.assertIn("mobile_app_iphone_von_matthias", html)
+        self.assertIn("mobile_app_ipad", html)
+        self.assertIn('value="__native__" selected', html)
+        self.assertNotIn("TEST_HA_SUPERVISOR_SECRET", html)
+
+    def test_mobile_selection_persists_separately_and_preserves_options(self):
+        with urlopen(self.url, timeout=4):
+            pass
+        form = urlencode({"csrf": self.server.csrf,
+                          "service": "mobile_app_ipad"}).encode("utf-8")
+        req = Request(self.url + "notify-service", data=form, method="POST",
+                      headers={"Content-Type": "application/x-www-form-urlencoded"})
+        with urlopen(req, timeout=4) as response:
+            self.assertEqual(response.status, 200)
+            self.assertIn('id="settings" open', response.read().decode("utf-8"))
+        from mobile_notify import effective_service, selection_file
+        options = json.loads((self.root / "options.json").read_text())
+        self.assertEqual(effective_service(options, self.root), "mobile_app_ipad")
+        self.assertEqual(options["live_activity_notify_service"],
+                         "mobile_app_iphone_von_matthias")
+        self.assertEqual(json.loads(selection_file(self.root).read_text()),
+                         {"service": "mobile_app_ipad"})
+
+    def test_mobile_picker_falls_back_to_ha_option(self):
+        from mobile_notify import effective_service, save_service
+        save_service(self.root, "mobile_app_ipad")
+        form = urlencode({"csrf": self.server.csrf,
+                          "service": "__native__"}).encode("utf-8")
+        req = Request(self.url + "notify-service", data=form, method="POST",
+                      headers={"Content-Type": "application/x-www-form-urlencoded"})
+        with urlopen(req, timeout=4):
+            pass
+        self.assertEqual(effective_service(
+            json.loads((self.root / "options.json").read_text()), self.root
+        ), "mobile_app_iphone_von_matthias")
+
+    def test_unlisted_mobile_action_rejected(self):
+        with urlopen(self.url, timeout=4):
+            pass
+        form = urlencode({"csrf": self.server.csrf,
+                          "service": "notify.send_message"}).encode("utf-8")
+        req = Request(self.url + "notify-service", data=form, method="POST",
+                      headers={"Content-Type": "application/x-www-form-urlencoded"})
+        with self.assertRaises(HTTPError) as err:
+            urlopen(req, timeout=4)
+        self.assertEqual(err.exception.code, 400)
+
+    def test_mobile_form_rejects_expired_cache_and_csrf(self):
+        form = urlencode({"csrf": self.server.csrf,
+                          "service": "mobile_app_ipad"}).encode("utf-8")
+        req = Request(self.url + "notify-service", data=form, method="POST",
+                      headers={"Content-Type": "application/x-www-form-urlencoded"})
+        with self.assertRaises(HTTPError) as err:
+            urlopen(req, timeout=4)
+        self.assertEqual(err.exception.code, 409)
+        with urlopen(self.url, timeout=4):
+            pass
+        form = urlencode({"csrf": "wrong",
+                          "service": "mobile_app_ipad"}).encode("utf-8")
+        req = Request(self.url + "notify-service", data=form, method="POST",
+                      headers={"Content-Type": "application/x-www-form-urlencoded"})
+        with self.assertRaises(HTTPError) as err:
+            urlopen(req, timeout=4)
+        self.assertEqual(err.exception.code, 403)
+
+    def test_ha_mobile_list_is_cached_and_refreshable(self):
+        with urlopen(self.url, timeout=4):
+            pass
+        with urlopen(self.url, timeout=4):
+            pass
+        self.assertEqual(self.mobile_fetcher.call_count, 1)
+        with urlopen(self.url + "?refresh_mobile=1", timeout=4) as response:
+            self.assertIn('id="settings" open', response.read().decode("utf-8"))
+        self.assertEqual(self.mobile_fetcher.call_count, 2)
 
     def test_can_uncheck_all_monitored_repositories(self):
         with urlopen(self.url, timeout=4):
