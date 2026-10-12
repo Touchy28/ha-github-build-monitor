@@ -287,7 +287,7 @@ class WebTests(unittest.TestCase):
             pass
         self.assertEqual(self.mobile_fetcher.call_count, 1)
         with urlopen(self.url + "?refresh_mobile=1", timeout=4) as response:
-            self.assertIn('id="settings" open', response.read().decode("utf-8"))
+            self.assertIn('id="devices" open', response.read().decode("utf-8"))
         self.assertEqual(self.mobile_fetcher.call_count, 2)
 
     def test_can_uncheck_all_monitored_repositories(self):
