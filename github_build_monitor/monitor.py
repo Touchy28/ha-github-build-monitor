@@ -337,14 +337,17 @@ def deliver_activity_updates(repo: str, github_token: str, ha_token: str,
         # One phone's progress cannot incorrectly suppress another phone's update.
         data["progress_percent"] = max(data["progress_percent"], int(old.get("percent", 0)))
         step = data.get("current_step") or data.get("current_job") or ""
+        title = activity_title(run, data, repo,
+                               display_name(repo, config.get("repository_aliases")), now)
         if (not old
                 or data["progress_percent"] - int(old.get("percent", 0)) >= 2
                 or step != old.get("step")
+                or title != old.get("title")
                 or now - float(old.get("sent_at", 0)) >= 180):
             notify(service, ha_token, activity_payload(run, data, repo,
                 display_name(repo, config.get("repository_aliases")), now))
             activities[run_id] = {"percent": data["progress_percent"],
-                                  "step": step, "sent_at": now}
+                                  "step": step, "title": title, "sent_at": now}
     for run_id, old in list(activities.items()):
         if "finished_at" in old:
             if now - float(old["finished_at"]) >= 30:
