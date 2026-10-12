@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.DS_Store
+.env
+.env.*
+!.env.example
+options.json
+*.token
+*.key
+*.pem
+_data/
