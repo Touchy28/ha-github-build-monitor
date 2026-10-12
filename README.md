@@ -44,6 +44,37 @@ For a new installation on Home Assistant OS / Supervisor:
 | live_activity_notify_service | notify.mobile_app_iphone | Actual Home Assistant phone notifier |
 | poll_interval_seconds | 60 | 30–300 seconds; higher interval saves API calls |
 
+### Repository-Auswahl per GitHub-Token (ab v0.1.5)
+
+Statt Repository-Namen manuell einzutippen: Unter **Info → OPEN WEB UI**
+lädt die App die mit dem bereits gespeicherten GitHub-Token sichtbaren
+Repositories über die GitHub-REST-API. In der Liste können beliebig viele
+Projekte per Checkbox ein- und ausgeschaltet und mit **Auswahl speichern**
+zur Überwachung vorgemerkt werden. Der Token bleibt serverseitig in den
+Home-Assistant-App-Optionen; die Auswahldatei speichert ausschließlich Namen.
+
+- Ein Fine-Grained-Token benötigt für die **Auswahlliste** `Metadata: Read`
+  (standardmäßig enthalten), und für das **Monitoring** `Actions: Read`
+  für die autorisierten Repositories.
+- Die GitHub-Auswahlliste umfasst nur Repositories, die mit dem Token
+  zugänglich sind. Private Repositories werden entsprechend gekennzeichnet.
+- Bereits gespeicherte Repositories aus den alten App-Optionen bleiben beim
+  Upgrade zunächst aktiv. **Erst nach dem ersten Speichern der Webauswahl**
+  übernimmt die neue Auswahl die Kontrolle. Eine leere Auswahl stoppt das
+  Monitoring vollständig.
+- Der alte App-Konfigurationseintrag `repositories` bleibt für die
+  Kompatibilität vorhanden und dient nach einer gespeicherten Webauswahl
+  nur noch als Fallback bei deren Entfernung.
+- Neue Auswahl wird automatisch beim nächsten Poll übernommen. Die
+  bisher gesammelten Laufzeiten für abgewählte Projekte bleiben erhalten;
+  laufende Live-Aktivitäten für abgewählte Projekte werden beendet.
+- Die Liste wird serverseitig maximal 10 Minuten zwischengespeichert,
+  kann über **Repository-Liste von GitHub aktualisieren** neu geladen
+  werden und wird bei Tokenwechsel automatisch ungültig.
+- Bei API-Fehlern oder einem ungültigen Token bleibt die bisherige
+  Auswahl bestehen. Token oder GitHub-Zugangsdaten werden niemals
+  an den Browser übertragen.
+
 ### Lernstatistik und Zurücksetzen (ab v0.1.5)
 
 Die normale **Konfiguration** zeigt statische Supervisor-App-Optionen wie Token und Repository-Liste. Laufende Lerndaten können dort nicht automatisch als Tabelle angezeigt werden. Für die neue Statistik öffne in der App unter **Info → OPEN WEB UI** die integrierte Home-Assistant-Oberfläche **Build-Lernstatistik**. Es ist kein separater Webserver-Zugang, Passwort oder Router-Port erforderlich (Home Assistant Ingress, Admin-Panel).
@@ -74,7 +105,7 @@ When enabled, notifications use the Companion App live_update setting with a uni
 - Service calls update live notifications only while Home Assistant/Companion App push transport is available.
 - The new code intentionally differs from v0.1.0: it supports multiple parallel Live Activities and a completed failed run reports 100% execution with the failure conclusion clearly shown. Its notification tag format changes. **Since 0.1.3, deterministic v0.1.0 per-repository tags are cleared automatically once even if the original add-on data is unavailable**, provided a mobile notify service is configured. Keep the old local app stopped.
 
-The options file is re-read on every polling cycle; changes do not normally require a restart.
+The options and the saved Ingress checkbox selection are re-read on every polling cycle; changes do not normally require a restart.
 
 The original examples for two HA gauge cards are in [examples/ha-template.yaml](examples/ha-template.yaml) and [examples/ha-dashboard.yaml](examples/ha-dashboard.yaml).
 
