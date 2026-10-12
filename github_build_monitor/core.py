@@ -7,7 +7,7 @@ import re
 from statistics import median
 
 _REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
-_NOTIFY = re.compile(r"^notify\.mobile_app_[a-z0-9_]+$")
+_NOTIFY = re.compile(r"^(?:notify\.)?mobile_app_[a-zA-Z0-9_]+$")
 
 
 def repositories(options: dict) -> list[str]:
@@ -29,8 +29,9 @@ def notify_service(name: str) -> str:
 
 def sensor_id(repo: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "_", repo.lower()).strip("_")[:35]
-    digest = hashlib.sha256(repo.lower().encode()).hexdigest()[:8]
-    return f"sensor.github_build_{slug}_{digest}"
+    digest = hashlib.sha256(repo.lower().encode()).hexdigest()[:6]
+    # Keep the original v0.1.0 entity ID for existing HA dashboards.
+    return f"sensor.github_runner_{slug}_{digest}"
 
 
 def activity_tag(repo: str, run_id: int) -> str:
@@ -55,12 +56,12 @@ def duration(step: dict) -> float | None:
     return elapsed if elapsed <= 6 * 3600 else None
 
 
-def history_key(repo: str, job: dict, step: dict) -> str:
-    return "\x1f".join((repo.lower(), str(job.get("name") or ""), str(step.get("name") or "")))
+def history_key(repo: str, job: dict, step: dict, workflow: str = "") -> str:
+    return "\x1f".join((repo.lower(), workflow, str(job.get("name") or ""), str(step.get("name") or "")))
 
 
-def expected_seconds(repo: str, job: dict, step: dict, history: dict) -> float:
-    samples = history.get("steps", {}).get(history_key(repo, job, step), [])
+def expected_seconds(repo: str, job: dict, step: dict, history: dict, workflow: str = "") -> float:
+    samples = history.get("steps", {}).get(history_key(repo, job, step, workflow), [])
     clean = [float(n) for n in samples if isinstance(n, (float, int)) and 0 < n <= 21600]
     return max(2.0, median(clean)) if clean else 60.0
 
@@ -79,7 +80,7 @@ def learn(repo: str, run: dict, jobs: list[dict], history: dict) -> bool:
             elapsed = duration(step)
             if elapsed is None or step.get("conclusion") not in ("success", None):
                 continue
-            key = history_key(repo, job, step)
+            key = history_key(repo, job, step, str(run.get("name") or ""))
             bucket = buckets.setdefault(key, [])
             bucket.append(round(elapsed, 2))
             buckets[key] = bucket[-20:]
@@ -112,9 +113,9 @@ def snapshot(repo: str, run: dict, jobs: list[dict], history: dict,
                       "conclusion": job.get("conclusion"), "started_at": job.get("started_at")}]
         for step in steps:
             total_steps += 1
-            weight = expected_seconds(repo, job, step, history)
+            weight = expected_seconds(repo, job, step, history, str(run.get("name") or ""))
             total_weight += weight
-            entry = history.get("steps", {}).get(history_key(repo, job, step), [])
+            entry = history.get("steps", {}).get(history_key(repo, job, step, str(run.get("name") or "")), [])
             if len(entry) >= 2:
                 historic += 1
             state = step.get("status") or ("completed" if step.get("conclusion") else "queued")
