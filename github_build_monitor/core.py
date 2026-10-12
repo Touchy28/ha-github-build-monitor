@@ -127,7 +127,10 @@ def snapshot(repo: str, run: dict, jobs: list[dict], history: dict,
                 started = timestamp(step.get("started_at"))
                 if started is not None:
                     observed = max(observed, int(now - started))
-                    done_weight += weight * min(.9, max(0, now - started) / weight)
+                    # Retain the v0.1.0 rule: never interpolate unmeasured steps.
+                    # Two historical observations are required for this exact workflow step.
+                    if len(entry) >= 2:
+                        done_weight += weight * min(.9, max(0, now - started) / weight)
             if not active_step:
                 active_step = str(step.get("name") or "")
                 active_job = str(job.get("name") or "")
@@ -138,7 +141,7 @@ def snapshot(repo: str, run: dict, jobs: list[dict], history: dict,
     else:
         percent = 0
     eta = None
-    if status != "completed" and total_weight and historic >= max(1, total_steps // 2):
+    if status != "completed" and total_weight and historic / max(1, total_steps) >= 0.65:
         eta = max(0, int(total_weight - done_weight))
     if not active_job:
         for job in jobs:
