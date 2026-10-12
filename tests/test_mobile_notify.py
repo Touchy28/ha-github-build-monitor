@@ -146,7 +146,7 @@ class MobileNotifyTests(unittest.TestCase):
         html = mobile_notify_ui.selector_html(
             OLD, None, "csrf", error="Home Assistant offline", override_active=True)
         self.assertIn('name="use_native" value="1"', html)
-        self.assertIn("Zur HA-App-Konfiguration zurückkehren", html)
+        self.assertIn("Wert aus HA-App-Konfiguration verwenden", html)
 
     def test_switch_clears_old_notification_and_new_target_is_active(self):
         state = {
