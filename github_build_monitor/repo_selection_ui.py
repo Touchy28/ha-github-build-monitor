@@ -41,16 +41,18 @@ def cached_available(server, token: str):
 
 
 def selector_html(current: list[str], available: list[dict] | None,
-                  csrf: str, message: str = "", error: str = "") -> str:
+                  csrf: str, message: str = "", error: str = "",
+                  aliases: dict[str, str] | None = None) -> str:
+    from repo_selection import display_name
+    aliases = aliases or {}
     parts = [
         '<details class="card repo-picker" id="repositories"',
         ' open' if (message or error) else '',
         '><summary class="fold-title"><span>📁 Repositories auswählen</span>'
         f'<span class="fold-count">{len(current)} aktiv</span></summary>',
         '<div class="fold-body">',
-        '<p class="muted">GitHub liest mit dem vorhandenen Token alle für ihn '
-        'sichtbaren Repositories ein. Du entscheidest, welche überwacht werden. '
-        'Der Token selbst bleibt in Home Assistant.</p>',
+        '<p class="muted">Wähle die GitHub-Projekte für die Überwachung aus. '
+        'Bei Bedarf kannst du einen kurzen Anzeigenamen festlegen.</p>',
     ]
     if message:
         parts.append(f'<p class="note">{escape(message)}</p>')
@@ -64,25 +66,33 @@ def selector_html(current: list[str], available: list[dict] | None,
     if available is None:
         if current:
             parts.append("<p><strong>Bisher überwacht:</strong> " +
-                         ", ".join(escape(repo) for repo in current) + "</p>")
+                         ", ".join(escape(display_name(repo, aliases)) for repo in current) + "</p>")
         parts.append("</div></details>")
         return "".join(parts)
     current_set = {item.casefold() for item in current}
     choices = []
     for repo in available:
         name = repo["full_name"]
+        custom = aliases.get(name.casefold(), "")
         marked = " checked" if name.casefold() in current_set else ""
-        private = " 🔒 Privat" if repo.get("private") else ""
-        archived = " · Archiviert" if repo.get("archived") else ""
+        flags = " · ".join(flag for flag, enabled in (
+            ("🔒 Privat", repo.get("private")), ("Archiviert", repo.get("archived"))
+        ) if enabled)
         description = repo.get("description") or ""
-        sub = (f'<small>{escape(description)}</small>' if description else "")
         choices.append(
-            '<label class="repository-choice">'
+            '<div class="selection-choice">'
+            '<label class="selection-choice-label">'
             f'<input type="checkbox" name="repository" value="{escape(name, quote=True)}"{marked}>'
-            '<span class="repository-details">'
-            f'<strong>{escape(name)}</strong>'
-            f'<small>{escape(private + archived)}</small>'
-            + sub + '</span></label>'
+            '<span class="selection-choice-details">'
+            f'<strong>{escape(custom or name.split("/")[-1])}</strong>'
+            f'<small>{escape(name)}{(" · " + escape(flags)) if flags else ""}</small>'
+            + (f'<small>{escape(description)}</small>' if description else "")
+            + '</span></label>'
+            f'<input type="hidden" name="listed" value="{escape(name, quote=True)}">'
+            '<label class="selection-alias-label">Anzeigename / Abkürzung (optional)'
+            f'<input type="text" name="alias" maxlength="32" value="{escape(custom, quote=True)}"'
+            f' placeholder="{escape(name.split("/")[-1], quote=True)}"></label>'
+            '</div>'
         )
     selected = sum(1 for repo in available
                    if repo["full_name"].casefold() in current_set)
@@ -91,11 +101,10 @@ def selector_html(current: list[str], available: list[dict] | None,
         'Repositories ausgewählt</p>',
         '<form action="repositories" method="post">',
         f'<input type="hidden" name="csrf" value="{escape(csrf, quote=True)}">',
-        '<div class="repository-list">',
+        '<div class="selection-list">',
         "".join(choices) or "<p>Für diesen Token wurden keine Repositories gefunden.</p>",
-        '</div><p class="muted">Du kannst die Auswahl später jederzeit ändern. '
-        'Nicht ausgewählte Projekte werden nicht mehr abgefragt; '
-        'bereits gelernte Zeiten bleiben erhalten.</p>',
+        '</div><p class="muted">Anzeigenamen ändern nur die Darstellung, '
+        'nicht GitHub-Adressen, Sensoren oder bereits gelernte Zeiten.</p>',
         '<button type="submit">Auswahl speichern</button>',
         '</form></div></details>',
     ]

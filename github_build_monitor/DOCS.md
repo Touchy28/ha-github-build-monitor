@@ -43,3 +43,21 @@ getrenntem Fortschritt und automatischer Bereinigung beim Abschluss.
 Die alte Einzelgeräte-Auswahl wird automatisch übernommen. Keine manuelle
 Migration nötig. Entfernst du ein Häkchen, bleibt die App auf den übrigen
 Geräten aktiv. 
+
+
+## Kurzer Live-Aktivitäts-Titel und frei wählbare Repository-Namen (v0.1.9)
+
+Die iPhone-Live-Aktivität zeigt nicht mehr „GitHub · ...“, sondern nur den
+Repo-Anzeigenamen und eine kurze **Zeitangabe im Titel**. Wenn genügend
+Vergleichsdaten existieren, wird dort die geschätzte Restzeit angezeigt
+(`B&B · ~3m–6m`); ansonsten die vergangene Laufzeit (`B&B · ⏱3m`).
+Damit entfällt der oft abgeschnittene Prozenttext in der zweiten Zeile;
+die Prozentzahl bleibt rechts und auf dem Fortschrittsbalken.
+
+Im Bereich **Repositories auswählen** kannst du einen eigenen Anzeigenamen
+oder eine Abkürzung (bis 32 Zeichen) eintragen. In der Lernstatistik und
+auf dem iPhone erscheint dieser Name, die technischen GitHub-Adressen und
+alle gespeicherten Lernwerte bleiben unverändert.
+
+Die **Geräteauswahl** ist ab jetzt eigenständig zwischen Repositories und
+Einstellungen einklappbar. Beide Auswahllisten verwenden dasselbe Design.

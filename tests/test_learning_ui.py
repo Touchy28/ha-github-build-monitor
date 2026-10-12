@@ -184,10 +184,11 @@ class WebTests(unittest.TestCase):
         self.assertIn('name="repository" value="' + REPO + '" checked', html)
         self.assertIn("Touchy28/new-project", html)
         self.assertNotIn("SECRET_DO_NOT_SHOW", html)
-        values = urlencode({
-            "csrf": self.server.csrf,
-            "repository": "Touchy28/new-project",
-        }).encode("utf-8")
+        form = [("csrf", self.server.csrf), ("repository", "Touchy28/new-project")]
+        for entry in self.github_repos:
+            name = entry["full_name"]
+            form.extend([("listed", name), ("alias", "B&B" if name == REPO else "")])
+        values = urlencode(form).encode("utf-8")
         request = Request(
             self.url + "repositories", data=values, method="POST",
             headers={"Content-Type": "application/x-www-form-urlencoded"})
@@ -224,7 +225,7 @@ class WebTests(unittest.TestCase):
                       headers={"Content-Type": "application/x-www-form-urlencoded"})
         with urlopen(req, timeout=4) as response:
             self.assertEqual(response.status, 200)
-            self.assertIn('id="settings" open', response.read().decode("utf-8"))
+            self.assertIn('id="devices" open', response.read().decode("utf-8"))
         from mobile_notify import effective_service, selection_file
         options = json.loads((self.root / "options.json").read_text())
         self.assertEqual(effective_service(options, self.root), "mobile_app_ipad")
@@ -286,13 +287,16 @@ class WebTests(unittest.TestCase):
             pass
         self.assertEqual(self.mobile_fetcher.call_count, 1)
         with urlopen(self.url + "?refresh_mobile=1", timeout=4) as response:
-            self.assertIn('id="settings" open', response.read().decode("utf-8"))
+            self.assertIn('id="devices" open', response.read().decode("utf-8"))
         self.assertEqual(self.mobile_fetcher.call_count, 2)
 
     def test_can_uncheck_all_monitored_repositories(self):
         with urlopen(self.url, timeout=4):
             pass
-        data = urlencode({"csrf": self.server.csrf}).encode("utf-8")
+        form = [("csrf", self.server.csrf)]
+        for entry in self.github_repos:
+            form.extend([("listed", entry["full_name"]), ("alias", "")])
+        data = urlencode(form).encode("utf-8")
         request = Request(self.url + "repositories", data=data, method="POST",
                           headers={"Content-Type": "application/x-www-form-urlencoded"})
         with urlopen(request, timeout=4):
@@ -313,6 +317,8 @@ class WebTests(unittest.TestCase):
             pass
         items = [("csrf", self.server.csrf)]
         items.extend(("repository", item["full_name"]) for item in extra)
+        for entry in self.github_repos:
+            items.extend([("listed", entry["full_name"]), ("alias", "")])
         data = urlencode(items).encode("utf-8")
         self.assertGreater(len(data), 2048)
         req = Request(self.url + "repositories", data=data, method="POST",
@@ -404,6 +410,57 @@ class WebTests(unittest.TestCase):
         self.assertIn('<details class="card repo-picker" id="repositories" open', forced)
         self.assertIn('GitHub momentan nicht erreichbar', forced)
 
+    def test_device_section_is_between_repositories_and_settings(self):
+        with urlopen(self.url, timeout=4) as response:
+            html = response.read().decode("utf-8")
+        repo = html.index('id="repositories"')
+        devices = html.index('id="devices"')
+        settings = html.index('id="settings"')
+        self.assertLess(repo, devices)
+        self.assertLess(devices, settings)
+        self.assertIn('href="#devices"', html)
+        self.assertNotIn('<details class="card" id="devices" open', html)
+        self.assertIn('class="selection-list"', html)
+        self.assertIn('class="selection-choice"', html)
+        self.assertIn('Anzeigename / Abkürzung', html)
+        self.assertIn('Anzeigename (optional)', html)
+
+    def test_save_repository_alias_shows_in_learning_and_form(self):
+        with urlopen(self.url, timeout=4):
+            pass
+        form = [("csrf", self.server.csrf), ("repository", REPO)]
+        for entry in self.github_repos:
+            repo = entry["full_name"]
+            form.extend([("listed", repo), ("alias", "B&B" if repo == REPO else "")])
+        request = Request(self.url + "repositories", data=urlencode(form).encode("utf-8"),
+                          method="POST",
+                          headers={"Content-Type": "application/x-www-form-urlencoded"})
+        with urlopen(request, timeout=4) as response:
+            html = response.read().decode("utf-8")
+        from repo_selection import effective_repositories, repository_aliases
+        self.assertEqual(effective_repositories(
+            json.loads((self.root / "options.json").read_text()), self.root), [REPO])
+        self.assertEqual(repository_aliases(self.root)[REPO.lower()], "B&B")
+        self.assertIn("B&amp;B", html)
+        self.assertIn("Touchy28/more-tents", html)
+        self.assertIn('id="devices"', html)
+        self.assertNotIn("SECRET_DO_NOT_SHOW", html)
+
+    def test_alias_validation_rejects_too_long(self):
+        with urlopen(self.url, timeout=4):
+            pass
+        form = [("csrf", self.server.csrf), ("repository", REPO)]
+        for entry in self.github_repos:
+            repo = entry["full_name"]
+            form.extend([("listed", repo), ("alias", "X" * 33 if repo == REPO else "")])
+        request = Request(self.url + "repositories", data=urlencode(form).encode("utf-8"),
+                          method="POST",
+                          headers={"Content-Type": "application/x-www-form-urlencoded"})
+        with self.assertRaises(HTTPError) as error:
+            urlopen(request, timeout=4)
+        self.assertEqual(error.exception.code, 400)
+        self.assertFalse((self.root / "monitored_repositories.json").exists())
+
     def test_binary_assets_and_panel_icon(self):
         folder = Path(__file__).resolve().parents[1] / "github_build_monitor"
         for file in ("icon.png", "logo.png"):
@@ -411,7 +468,7 @@ class WebTests(unittest.TestCase):
                              b"\x89PNG\r\n\x1a\n")
         configuration = (folder / "config.yaml").read_text()
         self.assertIn('panel_icon: mdi:github', configuration)
-        self.assertIn('version: "0.1.8"', configuration)
+        self.assertIn('version: "0.1.9"', configuration)
 
     def test_post_queues_and_monitor_applies(self):
         with self.post() as response:

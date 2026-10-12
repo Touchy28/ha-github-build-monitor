@@ -2,7 +2,7 @@
 
 A standalone **read-only GitHub Actions monitor** for Home Assistant with native HA sensors, estimated build progress and iPhone Live Activities / Android Live Updates. No runner registration or Docker socket permissions.
 
-> **Version 0.1.8**. GitHub-hosted Home Assistant app with read-only monitoring, repository picker and compact timing dashboard. Stop the previous local app if you have not already done so.
+> **Version 0.1.9**. GitHub-hosted Home Assistant app with read-only monitoring, repository picker and compact timing dashboard. Stop the previous local app if you have not already done so.
 
 ## Capabilities
 
@@ -51,6 +51,29 @@ For a new installation on Home Assistant OS / Supervisor:
 Die Webansicht vereint Repository-Auswahl, Einstellungen-Übersicht und Lernstatistik. Die Statistik ist von Beginn an eingeklappt: **Repository → Workflow → Gesamtzeiten / Runner / Job → Schrittzeiten**. Jede Ebene lässt sich unabhängig öffnen.
 
 **Einschränkung der Home-Assistant-Oberfläche:** Die native **Konfiguration**-Registerkarte lässt sich von einer App nicht auf ihre eigene Ingress-Webansicht umleiten. Die Tokens und Basisoptionen verbleiben daher in der normalen HA-Konfiguration; die Weboberfläche zeigt deren Status sowie einen Link zurück zur App-Übersicht. Das vermeidet zusätzliche Supervisor-Rechte und hält bestehende Einstellungen kompatibel.
+
+### Kürzere Titel und Repository-Anzeigenamen (ab v0.1.9)
+
+Die iPhone-Live-Aktivität zeigt **keinen überflüssigen Präfix „GitHub ·“**
+mehr. Der Titel enthält nun den Repo-Namen und einen kompakten Zeitwert:
+bei belastbarer Prognose die **geschätzte Restzeitspanne** (z. B.
+`B&B · ~3m–6m`), andernfalls die **bisherige Laufzeit** (z. B.
+`more-tents · ⏱3m`). In der zweiten Zeile stehen nur der aktuelle Job
+oder Schritt und die abgeschlossenen Schritte; die Prozentzahl wird bereits
+rechts und im Fortschrittsbalken angezeigt.
+
+Unter **Weboberfläche → Repositories auswählen** gibt es zu jedem GitHub-
+Repository ein Feld **Anzeigename / Abkürzung**. Darin kannst du z. B.
+`Touchy28/more-tents` den Namen `B&B` geben. Diese Benennung wird sowohl
+in der Live-Aktivität als auch über den eingeklappten Lernstatistiken angezeigt.
+Die originale GitHub-Adresse bleibt darunter sichtbar. API-Abfragen,
+HA-Sensor-IDs, Notifications-Tags und bisher gelernte Zeiten werden nicht
+verändert. Bestehende Repository-Listen bleiben erhalten.
+
+Die **Geräteauswahl** ist jetzt ein eigener einklappbarer Bereich direkt
+zwischen **Repositories** und **Einstellungen**; die Darstellung beider
+Auswahllisten ist einheitlich. Eine Geräte-Umbenennung beeinflusst weiterhin
+nur die Anzeige und nicht den Home-Assistant-Benachrichtigungsdienst.
 
 ### Mehrere Live-Aktivitätsgeräte und Anzeigenamen (ab v0.1.8)
 
