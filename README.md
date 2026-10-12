@@ -2,7 +2,7 @@
 
 A standalone **read-only GitHub Actions monitor** for Home Assistant with native HA sensors, estimated build progress and iPhone Live Activities / Android Live Updates. No runner registration or Docker socket permissions.
 
-> **Preview version 0.1.2**. Compared against the user's original working v0.1.0 ZIP on 2026-10-12. Backward compatibility was improved, but installation and upgrade on a real Home Assistant instance still require a controlled test. **Do not replace your working HA app yet.**
+> **Preview version 0.1.3**. The user is testing the GitHub-hosted app on Home Assistant. This version fixes the old v0.1.0 Live Activity remaining in the Dynamic Island after switching add-on sources. Ensure the old local add-on is stopped before starting the GitHub add-on.
 
 ## Capabilities
 
@@ -23,7 +23,7 @@ A standalone **read-only GitHub Actions monitor** for Home Assistant with native
 
 ## Important: installation and migration
 
-You currently have a local app installed and working. This new repository has the same logical app slug; installing both in parallel is **not recommended**. First test this version on a separate HA instance or review the differences, then switch to the repository source once the monitor version is verified. When the old v0.1.0 data directory is **available inside the new add-on's same /data volume**, learned durations are imported automatically. **Important:** switching from a local add-on to a repository add-on may change the Supervisor add-on ID and its private storage volume; in that case automatic migration cannot access old history. Back up the old app data before switching.
+**When migrating from the local v0.1.0 app, stop the old installation first.** Installing and running two instances in parallel is not recommended, because both can update the same sensors and notifications. When the old v0.1.0 data directory is **available inside the new add-on's same /data volume**, learned durations are imported automatically. **Important:** switching from a local add-on to a repository add-on may change the Supervisor add-on ID and its private storage volume; in that case automatic migration cannot access old history. Back up the old app data before switching.
 
 For a new installation on Home Assistant OS / Supervisor:
 
@@ -31,7 +31,7 @@ For a new installation on Home Assistant OS / Supervisor:
    https://github.com/Touchy28/ha-github-build-monitor
 2. Refresh the store, select **GitHub Build Monitor**, then install it.
 3. In app configuration, enter a GitHub Actions **read-only** token, select repositories, and leave mobile notifications off for the initial sensor check.
-4. Start the app; inspect **Log** and look for sensors with the prefix sensor.github_build_ under Developer Tools → States.
+4. Start the app; inspect **Log** and look for sensors with the prefix sensor.github_runner_ under Developer Tools → States.
 5. Once the sensor check succeeds, enable Live Activities and set **live_activity_notify_service** to e.g. notify.mobile_app_iphone (use your actual mobile service).
 
 ### Options
@@ -60,7 +60,7 @@ When enabled, notifications use the Companion App live_update setting with a uni
 - Percentage and ETA are **approximations**. Active steps are interpolated only after at least two historical measurements of the same workflow/job/step. Progress is clamped to avoid decreases when jobs appear.
 - GitHub API authentication errors and rate limits show up in the HA app log; previous sensor and Live Activity remain unchanged on transient failures. The monitor retries on the next cycle.
 - Service calls update live notifications only while Home Assistant/Companion App push transport is available.
-- The new code intentionally differs from v0.1.0: it supports multiple parallel Live Activities and a completed failed run reports 100% execution with the failure conclusion clearly shown. Its notification tag format changes; known v0.1.0 tags are cleaned up when the previous notification state is available in the same data volume.
+- The new code intentionally differs from v0.1.0: it supports multiple parallel Live Activities and a completed failed run reports 100% execution with the failure conclusion clearly shown. Its notification tag format changes. **Since 0.1.3, deterministic v0.1.0 per-repository tags are cleared automatically once even if the original add-on data is unavailable**, provided a mobile notify service is configured. Keep the old local app stopped.
 
 The options file is re-read on every polling cycle; changes do not normally require a restart.
 
