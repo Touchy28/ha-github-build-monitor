@@ -418,10 +418,11 @@ def main() -> None:
                 ha_token, repos)
         except (RuntimeError, OSError, ValueError) as exc:
             log(f"Legacy Live Activity cleanup will retry: {exc}")
-        # An unchecked repository must not leave an orphaned Live Activity.
-        for previous_repo, activities in list(state.get("activities", {}).items()):
-            if previous_repo in repos:
-                continue
+        # An unchecked repository must not leave a stale HA sensor or Live Activity.
+        prior = set(state.get("last_monitored_repositories") or [])
+        previous = prior | set(state.get("activities", {}))
+        for previous_repo in previous - set(repos):
+            activities = state.setdefault("activities", {}).setdefault(previous_repo, {})
             service = config.get("live_activity_notify_service", "")
             if activities and service:
                 try:
@@ -430,6 +431,13 @@ def main() -> None:
                         del activities[run_id]
                 except (ValueError, RuntimeError, OSError) as exc:
                     log(f"Unable to retire {previous_repo} notification: {exc}")
+            if previous_repo in prior:
+                try:
+                    set_sensor(previous_repo, {"state": "disabled", "repository": previous_repo,
+                                               "progress_percent": 0, "active_run_count": 0}, ha_token)
+                except (ValueError, RuntimeError, OSError) as exc:
+                    log(f"Unable to mark {previous_repo} as disabled: {exc}")
+        state["last_monitored_repositories"] = list(repos)
         for repo in repos:
             try:
                 monitor_repository(repo, token, ha_token, config, state, history, now)
@@ -440,6 +448,10 @@ def main() -> None:
             finally:
                 write_json(state_file, state)
                 write_json(history_file, history)
+        # Also persist an empty selection when all repositories were unchecked.
+        if not repos:
+            write_json(state_file, state)
+            write_json(history_file, history)
         time.sleep(interval)
 
 
