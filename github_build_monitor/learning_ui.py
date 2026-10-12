@@ -434,7 +434,7 @@ class LearningHandler(BaseHTTPRequestHandler):
         max_length = 100_000 if route in ("/repositories", "/notify-service") else 2048
         if length < 1 or length > max_length:
             return self.respond(413, b"Invalid body length")
-        fields = parse_qs(self.rfile.read(length).decode("utf-8", "strict"))
+        fields = parse_qs(self.rfile.read(length).decode("utf-8", "strict"), keep_blank_values=True)
         if fields.get("csrf") != [self.server.csrf]:
             return self.respond(403, b"Invalid CSRF token")
         if route == "/notify-service":
