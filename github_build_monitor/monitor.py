@@ -265,11 +265,15 @@ def monitor_repository(repo: str, github_token: str, ha_token: str,
         activity_targets[selected[0]] = state["activities"]
     for service in selected:
         activities = activity_targets.setdefault(service, {}).setdefault(repo, {})
-        deliver_activity_updates(
-            repo, github_token, ha_token, service,
-            activities, config, now, relevant, recent_by_id,
-            results, jobs_cache, history
-        )
+        try:
+            deliver_activity_updates(
+                repo, github_token, ha_token, service,
+                activities, config, now, relevant, recent_by_id,
+                results, jobs_cache, history
+            )
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError) as exc:
+            # One unreachable phone must not suppress updates to all other devices.
+            log(f"Live Activity delivery to {service} failed; will retry: {exc}")
     state["activities"] = activity_targets.get(selected[0], {}) if selected else {}
 
 
