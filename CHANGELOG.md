@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.3 — 2026-10-12
+
+- Prevent completed GitHub runs from lingering indefinitely in iPhone Dynamic Island after a successful build.
+- Retry `clear_notification` three times, at least 60 seconds apart, and persist per-device cleanup state across app restarts. A failed HA API call does not consume a retry; the app logs each clear attempt.
+- Never submit new `live_update` payloads once cleanup has started, preventing late updates from recreating a dismissed activity.
+- Keep completion retry pushes at normal delivery priority without sound (`push.sound: none`), instead of quiet push priority 5. This reduces out-of-order delivery with subsequent clear notifications.
+- Existing v0.2.2 finish records and runs that dropped out of GitHub’s recent-run list get the same retried cleanup behavior.
+- Clearing remains best-effort: HA service acceptance does not prove iOS received the command. Orphaned activities that are no longer tracked may still need manual tagged clear.
+
+
+
 ## 0.2.2 — 2026-10-12
 
 - Fix iOS Live Activities using a **static title**: the Companion App cannot change an existing Live Activity title. Show only repository alias, workflow and run number in the header.
