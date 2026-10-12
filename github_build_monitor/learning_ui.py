@@ -226,7 +226,8 @@ class LearningHandler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             return self.respond(400, b"Invalid content length")
-        if length < 1 or length > 2048:
+        max_length = 100_000 if route == "/repositories" else 2048
+        if length < 1 or length > max_length:
             return self.respond(413, b"Invalid body length")
         fields = parse_qs(self.rfile.read(length).decode("utf-8", "strict"))
         if fields.get("csrf") != [self.server.csrf]:
