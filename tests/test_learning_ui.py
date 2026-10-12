@@ -410,6 +410,57 @@ class WebTests(unittest.TestCase):
         self.assertIn('<details class="card repo-picker" id="repositories" open', forced)
         self.assertIn('GitHub momentan nicht erreichbar', forced)
 
+    def test_device_section_is_between_repositories_and_settings(self):
+        with urlopen(self.url, timeout=4) as response:
+            html = response.read().decode("utf-8")
+        repo = html.index('id="repositories"')
+        devices = html.index('id="devices"')
+        settings = html.index('id="settings"')
+        self.assertLess(repo, devices)
+        self.assertLess(devices, settings)
+        self.assertIn('href="#devices"', html)
+        self.assertNotIn('<details class="card" id="devices" open', html)
+        self.assertIn('class="selection-list"', html)
+        self.assertIn('class="selection-choice"', html)
+        self.assertIn('Anzeigename / Abkürzung', html)
+        self.assertIn('Anzeigename (optional)', html)
+
+    def test_save_repository_alias_shows_in_learning_and_form(self):
+        with urlopen(self.url, timeout=4):
+            pass
+        form = [("csrf", self.server.csrf), ("repository", REPO)]
+        for entry in self.github_repos:
+            repo = entry["full_name"]
+            form.extend([("listed", repo), ("alias", "B&B" if repo == REPO else "")])
+        request = Request(self.url + "repositories", data=urlencode(form).encode("utf-8"),
+                          method="POST",
+                          headers={"Content-Type": "application/x-www-form-urlencoded"})
+        with urlopen(request, timeout=4) as response:
+            html = response.read().decode("utf-8")
+        from repo_selection import effective_repositories, repository_aliases
+        self.assertEqual(effective_repositories(
+            json.loads((self.root / "options.json").read_text()), self.root), [REPO])
+        self.assertEqual(repository_aliases(self.root)[REPO.lower()], "B&B")
+        self.assertIn("B&amp;B", html)
+        self.assertIn("Touchy28/more-tents", html)
+        self.assertIn('id="devices"', html)
+        self.assertNotIn("SECRET_DO_NOT_SHOW", html)
+
+    def test_alias_validation_rejects_too_long(self):
+        with urlopen(self.url, timeout=4):
+            pass
+        form = [("csrf", self.server.csrf), ("repository", REPO)]
+        for entry in self.github_repos:
+            repo = entry["full_name"]
+            form.extend([("listed", repo), ("alias", "X" * 33 if repo == REPO else "")])
+        request = Request(self.url + "repositories", data=urlencode(form).encode("utf-8"),
+                          method="POST",
+                          headers={"Content-Type": "application/x-www-form-urlencoded"})
+        with self.assertRaises(HTTPError) as error:
+            urlopen(request, timeout=4)
+        self.assertEqual(error.exception.code, 400)
+        self.assertFalse((self.root / "monitored_repositories.json").exists())
+
     def test_binary_assets_and_panel_icon(self):
         folder = Path(__file__).resolve().parents[1] / "github_build_monitor"
         for file in ("icon.png", "logo.png"):
