@@ -21,7 +21,7 @@ from forecast import observe, predict, workflow_key
 from learning_store import learning_allowed, reset_history
 from learning_ui import start as start_learning_ui
 from mobile_notify import effective_service, effective_services
-from repo_selection import effective_repositories
+from repo_selection import effective_repositories, repository_aliases, display_name
 
 API_URL = "https://api.github.com"
 HA_URL = "http://supervisor/core/api"
@@ -141,7 +141,46 @@ def notify(service: str, ha_token: str, payload: dict) -> None:
              method="POST", data=payload)
 
 
-def activity_payload(run: dict, progress: dict, repo: str) -> dict:
+def compact_minutes(seconds: float) -> str:
+    """Compact iOS title time: 0–59m or 1h02, without verbose units."""
+    seconds = max(0, int(seconds))
+    if seconds >= 3600:
+        return f"{seconds // 3600}h{(seconds % 3600) // 60:02d}"
+    return f"{seconds // 60}m"
+
+
+def activity_title(run: dict, progress: dict, repo: str,
+                   display: str = "", now: float | None = None) -> str:
+    """Prioritize a visible time over a long title on iPhone Live Activities.
+
+    Shows estimated remaining range if enough similar builds exist; otherwise
+    the actual elapsed time since GitHub created the workflow. The title never
+    claims that elapsed time is a remaining-time estimate.
+    """
+    name = (display.strip() if isinstance(display, str) else "") or repo.split("/")[-1]
+    low, high = progress.get("eta_lower_seconds"), progress.get("eta_upper_seconds")
+    status = str(run.get("status") or "")
+    if (status != "completed" and isinstance(low, (int, float))
+            and isinstance(high, (int, float))):
+        label = "~" + compact_minutes(low)
+        if compact_minutes(high) != compact_minutes(low):
+            label += "–" + compact_minutes(high)
+    else:
+        start = timestamp(run.get("created_at") or run.get("run_started_at"))
+        finish = (timestamp(run.get("updated_at") or run.get("completed_at"))
+                  if status == "completed" else now if now is not None else time.time())
+        label = "⏱" + compact_minutes(max(0, finish - start)) if (
+            start is not None and finish is not None) else ""
+    # Keep the time visible when names are too long. Users can also assign
+    # custom short names, but unconfigured repositories must remain readable.
+    maximum_name = 20 if label else 30
+    if len(name) > maximum_name:
+        name = name[:maximum_name - 1] + "…"
+    return f"{name} · {label}" if label else name
+
+
+def activity_payload(run: dict, progress: dict, repo: str,
+                     display: str = "", now: float | None = None) -> dict:
     status = str(run.get("status") or "")
     conclusion = str(run.get("conclusion") or "")
     if status == "completed":
@@ -149,13 +188,11 @@ def activity_payload(run: dict, progress: dict, repo: str) -> dict:
                else f"Beendet: {conclusion or 'unbekannt'}")
     else:
         step = progress.get("current_step") or progress.get("current_job")
-        msg = f"{step or status} · {progress.get('completed_steps', 0)}/{progress.get('total_steps', 0)} Schritte · ca. {progress['progress_percent']} %"
-        low, high = progress.get("eta_lower_seconds"), progress.get("eta_upper_seconds")
-        if low is not None and high is not None:
-            from math import ceil
-            msg += f" · noch ca. {max(1, ceil(low / 60))}–{max(1, ceil(high / 60))} Min"
+        # The progress percentage is already shown prominently at the right
+        # of iOS Live Activity; estimated/elapsed time now belongs in the title.
+        msg = f"{step or status} · {progress.get('completed_steps', 0)}/{progress.get('total_steps', 0)} Schritte"
     return {
-        "title": f"GitHub · {repo.split('/')[-1]}"[:64],
+        "title": activity_title(run, progress, repo, display, now)[:64],
         "message": msg[:150],
         "data": {
             "tag": activity_tag(repo, run["id"]),
@@ -304,7 +341,8 @@ def deliver_activity_updates(repo: str, github_token: str, ha_token: str,
                 or data["progress_percent"] - int(old.get("percent", 0)) >= 2
                 or step != old.get("step")
                 or now - float(old.get("sent_at", 0)) >= 180):
-            notify(service, ha_token, activity_payload(run, data, repo))
+            notify(service, ha_token, activity_payload(run, data, repo,
+                display_name(repo, config.get("repository_aliases")), now))
             activities[run_id] = {"percent": data["progress_percent"],
                                   "step": step, "sent_at": now}
     for run_id, old in list(activities.items()):
@@ -326,7 +364,8 @@ def deliver_activity_updates(repo: str, github_token: str, ha_token: str,
             learn(repo, run, jobs, history)
             results[rid] = snapshot(repo, run, jobs, history, now)
             results[rid].update(predict(repo, run, jobs, history, now))
-        notify(service, ha_token, activity_payload(run, results[rid], repo))
+        notify(service, ha_token, activity_payload(run, results[rid], repo,
+               display_name(repo, config.get("repository_aliases")), now))
         old["finished_at"] = now
 
 
@@ -502,6 +541,7 @@ def main() -> None:
         # As in working v0.1.0, configuration changes take effect without a restart.
         native_options = read_json(DATA_DIR / "options.json", {})
         config = dict(native_options)
+        config["repository_aliases"] = repository_aliases(DATA_DIR)
         selected_devices = reconcile_mobile_targets(
             effective_services(native_options, DATA_DIR),
             str(native_options.get("live_activity_notify_service") or ""),
