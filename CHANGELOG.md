@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3 — 2026-10-12
+
+- Fix: the original v0.1.0 Dynamic Island Live Activity could remain stuck on `queued` after installing the GitHub repository version because the previous HA add-on stores its notification state in a separate volume.
+- Deterministically clear legacy `ghrunner_*` tags for every configured repository once the iPhone notify service is configured; preserve the new per-run tags.
+- Add regression tests for the scenario when no original state file is accessible.
+
 ## 0.1.2 — 2026-10-12
 
 - Compared against original functioning v0.1.0 archive.
