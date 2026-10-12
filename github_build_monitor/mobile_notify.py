@@ -22,11 +22,20 @@ def normalize(service: str) -> str:
     return notify_service(service)
 
 
+def selection_file(data_dir: Path) -> Path:
+    return data_dir / _SELECTION_FILENAME
+
+
+def clear_service(data_dir: Path) -> None:
+    """Return control to the existing Home Assistant add-on option."""
+    selection_file(data_dir).unlink(missing_ok=True)
+
+
 def effective_service(options: dict, data_dir: Path) -> str:
     """A saved web UI choice takes priority; otherwise old HA options win."""
     existing = str(options.get("live_activity_notify_service") or "")
     try:
-        saved = json.loads((data_dir / _SELECTION_FILENAME).read_text(encoding="utf-8"))
+        saved = json.loads(selection_file(data_dir).read_text(encoding="utf-8"))
         choice = saved.get("service")
         if not isinstance(choice, str):
             return existing
@@ -38,7 +47,7 @@ def effective_service(options: dict, data_dir: Path) -> str:
 def save_service(data_dir: Path, service: str) -> None:
     """Save only the whitelisted HA mobile notification service name."""
     clean = normalize(service)
-    target = data_dir / _SELECTION_FILENAME
+    target = selection_file(data_dir)
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_name(target.name + ".tmp")
     temporary.write_text(json.dumps({"service": clean}, ensure_ascii=False),
