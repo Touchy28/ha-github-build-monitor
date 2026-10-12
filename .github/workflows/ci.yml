@@ -20,7 +20,7 @@ jobs:
       - name: Unit tests
         run: python -m unittest discover -s tests -v
       - name: Python syntax
-        run: python -m py_compile github_build_monitor/core.py github_build_monitor/monitor.py
+        run: python -m py_compile github_build_monitor/core.py github_build_monitor/forecast.py github_build_monitor/monitor.py
       - name: Shell syntax
         run: sh -n github_build_monitor/run.sh
       - name: Validate Home Assistant app metadata
@@ -41,3 +41,5 @@ jobs:
           PY
       - name: Build application container
         run: docker build -t ha-github-build-monitor:ci ./github_build_monitor
+      - name: Smoke test imports inside built container
+        run: docker run --rm --entrypoint python ha-github-build-monitor:ci -c 'import core, forecast, monitor; print("Monitor modules import successfully")'
