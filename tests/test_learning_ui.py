@@ -52,7 +52,7 @@ class HistoryResetTests(unittest.TestCase):
         self.assertEqual(view[0]["workflow_samples"], 3)
         self.assertEqual(view[0]["step_samples"], 3)
         self.assertEqual(view[0]["workflows"][0]["name"], "Publish Home Assistant app")
-        self.assertEqual(view[0]["workflows"][0]["median_queue_seconds"], 20)
+        self.assertEqual(view[0]["workflows"][0]["median_queue_seconds"], 10)
         self.assertTrue(view[0]["workflows"][0]["prognosis_ready"])
         self.assertEqual(view[1]["workflow_samples"], 1)
 
