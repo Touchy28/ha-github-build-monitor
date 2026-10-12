@@ -396,7 +396,8 @@ class LearningHandler(BaseHTTPRequestHandler):
         message = ("Auswahl gespeichert. Der Monitor übernimmt sie beim nächsten Prüfzyklus."
                    if query.get("selection") == ["saved"] else "")
         section = selector_html(selected, available, self.server.csrf,
-                                message=message, error=problem or "")
+                                message=message, error=problem or "",
+                                aliases=repository_aliases(self.server.data_dir))
         devices, mobile_error = get_services(
             self.server, refresh=query.get("refresh_mobile") == ["1"])
         saved_mobile = query.get("notify") == ["saved"]
@@ -411,7 +412,7 @@ class LearningHandler(BaseHTTPRequestHandler):
             selected=mobile_services, aliases=mobile_aliases)
         page = render(self.server.data_dir, self.server.csrf, queued=queued,
                       repositories_html=section, mobile_html=mobile_html,
-                      expand_settings=saved_mobile or bool(mobile_error) or query.get("refresh_mobile") == ["1"])
+                      expand_devices=saved_mobile or bool(mobile_error) or query.get("refresh_mobile") == ["1"])
         return self.respond(200, page, "text/html; charset=utf-8")
 
     def do_POST(self) -> None:
@@ -457,7 +458,7 @@ class LearningHandler(BaseHTTPRequestHandler):
                 except (ValueError, TypeError):
                     return self.respond(400, b"Invalid selection or display name.")
             self.send_response(303)
-            self.send_header("Location", "./?notify=saved#settings")
+            self.send_header("Location", "./?notify=saved#devices")
             self.send_header("Content-Length", "0")
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
@@ -476,8 +477,16 @@ class LearningHandler(BaseHTTPRequestHandler):
             if any(name.casefold() not in available_by_name for name in selections):
                 return self.respond(400, b"Repository not authorized for this token")
             chosen = [available_by_name[name.casefold()] for name in selections]
-            with self.server.reset_lock:
-                store_selection(self.server.data_dir, chosen)
+            listed, aliases = fields.get("listed", []), fields.get("alias", [])
+            if (len(listed) != len(aliases) or len(listed) != len(available_by_name)
+                    or len(set(n.casefold() for n in listed)) != len(listed)
+                    or set(n.casefold() for n in listed) != set(available_by_name)):
+                return self.respond(400, b"Invalid repository names.")
+            try:
+                with self.server.reset_lock:
+                    store_selection(self.server.data_dir, chosen, dict(zip(listed, aliases)))
+            except (ValueError, TypeError):
+                return self.respond(400, b"Invalid alias.")
             self.send_response(303)
             self.send_header("Location", "./?selection=saved")
             self.send_header("Content-Length", "0")
