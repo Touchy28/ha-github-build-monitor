@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "github_build_monit
 
 from core import history_key, snapshot, timestamp
 from monitor import activity_title
+from forecast import predict
 
 REPO = "Touchy28/more-tents"
 RUN = {"id": 42, "status": "in_progress", "name": "Publish"}
@@ -43,6 +44,10 @@ class RemainingTimesTests(unittest.TestCase):
         value = snapshot(REPO, {"id": 42, "status": "queued", "name": "Publish"},
                          [j], historic(j, [45, 50, 55]), NOW)
         self.assertIsNone(value["current_step_remaining_seconds"])
+        # The production flow merges the conservative whole-run forecast
+        # after snapshot; without 3 prior complete workflows the total ETA
+        # also remains unknown rather than using a guessed step sum.
+        value.update(predict(REPO, RUN, [j], {}, NOW))
         self.assertEqual(activity_title(RUN, value, REPO, "B&B"),
                          "B&B · Restzeit –")
 
