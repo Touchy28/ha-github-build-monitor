@@ -36,15 +36,16 @@ def state():
 
 
 class RunIdentityTests(unittest.TestCase):
-    def test_title_contains_workflow_and_run_number_before_eta(self):
+    def test_title_contains_fixed_workflow_and_run_number(self):
         progress = {"current_step_remaining_seconds": None,
                     "estimated_remaining_seconds": 250}
         title = monitor.activity_title(run(42, 1055), progress, REPO, "B&B")
-        self.assertEqual(title, "B&B · CI #1055 · ≈–/5m")
+        self.assertEqual(title, "B&B · CI #1055")
+        self.assertEqual(monitor.remaining_time_label(run(42, 1055), progress), "≈–/5m")
         self.assertLessEqual(len(title), 64)
         another = monitor.activity_title(run(43, 94, "Switch prototype"),
                                          progress, REPO, "B&B")
-        self.assertEqual(another, "B&B · Switch prototype #94 · ≈–/5m")
+        self.assertEqual(another, "B&B · Switch prototype #94")
         self.assertNotEqual(title, another)
 
     def test_long_alias_and_workflow_preserve_number_and_finish(self):
@@ -53,7 +54,7 @@ class RunIdentityTests(unittest.TestCase):
                 "completed", "success"),
             {}, REPO, "Repository with a really long display name")
         self.assertIn("#1055", result)
-        self.assertTrue(result.endswith("✓"))
+        self.assertTrue(result.endswith("#1055"))
         self.assertLessEqual(len(result), 64)
 
     def test_parallel_runs_are_distinct_on_phone_and_sensor(self):
@@ -75,6 +76,8 @@ class RunIdentityTests(unittest.TestCase):
         self.assertEqual(len(payloads), 2)
         self.assertNotEqual(payloads[0]["data"]["tag"], payloads[1]["data"]["tag"])
         self.assertIn("CI #1055", payloads[0]["title"])
+        self.assertNotIn("≈", payloads[0]["title"])
+        self.assertIn("Restzeit –", payloads[0]["message"])
         self.assertIn("Switch prototype #94", payloads[1]["title"])
 
     def test_successful_primary_run_has_no_active_details(self):
