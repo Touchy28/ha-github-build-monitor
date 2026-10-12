@@ -2,7 +2,7 @@
 
 A standalone **read-only GitHub Actions monitor** for Home Assistant with native HA sensors, estimated build progress and iPhone Live Activities / Android Live Updates. No runner registration or Docker socket permissions.
 
-> **Version 0.2.2**. GitHub-hosted Home Assistant app with read-only monitoring, repository picker and compact timing dashboard. Stop the previous local app if you have not already done so.
+> **Version 0.2.3**. GitHub-hosted Home Assistant app with read-only monitoring, repository picker and compact timing dashboard. Stop the previous local app if you have not already done so.
 
 ## Capabilities
 
@@ -58,7 +58,7 @@ Jede Live-Aktivität hat den **festen Titel `Repository · Workflow #Laufnummer`
 
 Der vorhandene HA-Repository-Sensor zeigt weiterhin genau einen primären Workflow-Run. Für die gleichzeitig laufenden anderen Builds stehen nun `primary_run_id` und `active_run_details` mit eigener Laufnummer, Status, Fortschritt, Runner, Branch und URL in den Attributen. Es werden bis zu sechs parallele Läufe im Detail angezeigt; `active_run_count` zählt alle erkannten aktiven Läufe.
 
-Beim Abschluss wird der Endstatus drei Mal mit mindestens 60 Sekunden Abstand an Home Assistant übertragen und die Aktivität frühestens nach drei Minuten entfernt. Eine erfolgreiche HA-Serviceantwort ist **kein Nachweis der Anzeige auf dem iPhone**; damit wird die Übertragung robuster, nicht garantiert.
+Beim Abschluss wird der Endstatus bis zu drei Mal mit mindestens 60 Sekunden Abstand an Home Assistant übertragen. Danach folgen **drei getrennte `clear_notification`-Aufrufe** mit mindestens 60 Sekunden Abstand. Die App behält diese Aufräumversuche persistent je Gerät und Workflow und entfernt erst danach ihren gespeicherten Tracking-Eintrag. Die Abschlusswiederholungen werden mit normaler Push-Priorität, aber ohne Ton gesendet; nach Beginn der Löschphase erfolgen keine neuen `live_update`-Meldungen. Ein erfolgreicher HA-Dienstaufruf bestätigt **nicht** die tatsächliche iOS-Zustellung.
 
 ### Restzeit für aktuellen Schritt und gesamten Build (ab v0.2.0)
 
@@ -203,7 +203,7 @@ Home Assistant REST-created sensor entities are **not persistent** across an HA 
 
 ### iPhone Live Activities
 
-When enabled, notifications use the Companion App live_update setting with a unique tag per run. The iOS title is immutable; time and completion data are delivered in the mutable message. Updates modify the same activity; after a completed run, the monitor sends the terminal result three times over successive polls (at least 60 seconds apart), then retires it after at least 180 seconds. The first terminal notification is sent at normal priority, subsequent retries are quiet. If a legacy activity is no longer tracked locally, clear it manually using the original per-run tag. Submission to Home Assistant cannot prove iOS push delivery. Requires HA Core 2026.7+, iOS 17.2+ and working Companion App push notifications.
+When enabled, notifications use the Companion App live_update setting with a unique tag per run. The iOS title is immutable; time and completion data are delivered in the mutable message. Updates modify the same activity; after a completed run, the monitor sends the terminal result three times over successive polls (at least 60 seconds apart), then retires it after at least 180 seconds. All terminal notifications use normal push priority; retries explicitly suppress the sound. Afterwards, three `clear_notification` commands are attempted on separate polls, with per-device state saved until cleanup completes. If a legacy activity is no longer tracked locally, clear it manually using the original per-run tag. Submission to Home Assistant cannot prove iOS push delivery. Requires HA Core 2026.7+, iOS 17.2+ and working Companion App push notifications.
 
 ### Known limits
 

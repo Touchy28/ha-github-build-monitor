@@ -173,15 +173,70 @@ class TerminalDeliveryTests(unittest.TestCase):
         self.assertNotIn("finished_at", records["42"])
         self.assertIn("CI #1055", notify.call_args.args[2]["title"])
 
-    def test_legacy_finishing_record_is_eventually_removed(self):
+    def test_legacy_finishing_record_is_cleared_three_times(self):
         current = state()
         records = {"42": {"finished_at": 100}}  # v0.2.0 state without retry payload
         current["activity_targets"] = {PHONE: {REPO: records}}
         with mock.patch.object(monitor, "runs_for", return_value=[]), \
              mock.patch.object(monitor, "set_sensor"), \
              mock.patch.object(monitor, "notify") as notify:
-            monitor.monitor_repository(REPO, "", "TOKEN", config(), current, {}, 281)
+            for t in (281, 341, 401):
+                monitor.monitor_repository(REPO, "", "TOKEN", config(), current, {}, t)
+            self.assertEqual(records["42"]["clear_sent_count"], 3)
+            self.assertEqual(notify.call_count, 3)
+            self.assertTrue(all(c.args[2]["message"] == "clear_notification"
+                                for c in notify.call_args_list))
+            monitor.monitor_repository(REPO, "", "TOKEN", config(), current, {}, 461)
         self.assertNotIn("42", records)
+
+    def test_failed_clear_does_not_consume_attempt(self):
+        current = state()
+        records = {"42": {"finished_at": 100, "final_sent_count": 3,
+                          "last_final_sent_at": 200,
+                          "clear_sent_count": 1, "last_clear_sent_at": 281}}
+        current["activity_targets"] = {PHONE: {REPO: records}}
+        with mock.patch.object(monitor, "runs_for", return_value=[]), \
+             mock.patch.object(monitor, "set_sensor"), \
+             mock.patch.object(monitor, "notify", side_effect=RuntimeError("timeout")):
+            monitor.monitor_repository(REPO, "", "TOKEN", config(), current, {}, 341)
+        self.assertEqual(records["42"]["clear_sent_count"], 1)
+        with mock.patch.object(monitor, "runs_for", return_value=[]), \
+             mock.patch.object(monitor, "set_sensor"), \
+             mock.patch.object(monitor, "notify") as notify:
+            monitor.monitor_repository(REPO, "", "TOKEN", config(), current, {}, 401)
+        self.assertEqual(records["42"]["clear_sent_count"], 2)
+        self.assertEqual(notify.call_args.args[2]["message"], "clear_notification")
+
+    def test_finished_run_not_in_github_first_page_is_retried(self):
+        current = state()
+        records = {"42": {"percent": 75}}
+        current["activity_targets"] = {PHONE: {REPO: records}}
+        with mock.patch.object(monitor, "runs_for", return_value=[]), \
+             mock.patch.object(monitor, "set_sensor"), \
+             mock.patch.object(monitor, "notify") as notify:
+            for t in (1000, 1060, 1120):
+                monitor.monitor_repository(REPO, "", "TOKEN", config(), current, {}, t)
+            self.assertEqual(records["42"]["clear_sent_count"], 3)
+            self.assertEqual(notify.call_count, 3)
+            self.assertTrue(all(c.args[2]["message"] == "clear_notification"
+                                for c in notify.call_args_list))
+            monitor.monitor_repository(REPO, "", "TOKEN", config(), current, {}, 1180)
+        self.assertNotIn("42", records)
+
+    def test_no_terminal_update_after_clearing_begins(self):
+        current = state()
+        done = run(42, 1055, status="completed", conclusion="success")
+        records = {"42": {"finished_at": 100, "final_sent_count": 1,
+                          "final_payload": monitor.activity_payload(
+                              done, {"progress_percent": 100}, REPO, "B&B"),
+                          "clear_sent_count": 1, "last_clear_sent_at": 200}}
+        current["activity_targets"] = {PHONE: {REPO: records}}
+        with mock.patch.object(monitor, "runs_for", return_value=[done]), \
+             mock.patch.object(monitor, "set_sensor"), \
+             mock.patch.object(monitor, "jobs_for", return_value=[]), \
+             mock.patch.object(monitor, "notify") as notify:
+            monitor.monitor_repository(REPO, "", "TOKEN", config(), current, {}, 260)
+        self.assertEqual(notify.call_count, 1)
         self.assertEqual(notify.call_args.args[2]["message"], "clear_notification")
 
 

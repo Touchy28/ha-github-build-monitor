@@ -28,10 +28,14 @@ HA_URL = "http://supervisor/core/api"
 DATA_DIR = Path(os.environ.get("BUILD_MONITOR_DATA_DIR", "/data"))
 
 # A successful HA notify call confirms acceptance by HA, not display on iOS.
-# Repeat the terminal update before retiring its Live Activity.
+# Keep finishing and clearing separate: quiet iOS pushes may be delayed, so
+# a single clear can arrive before a late completion update and be undone.
 FINAL_ACTIVITY_UPDATES = 3
 FINAL_ACTIVITY_RETRY_SECONDS = 60
 FINAL_ACTIVITY_MIN_VISIBLE_SECONDS = 180
+FINAL_ACTIVITY_CLEAR_GRACE_SECONDS = 90
+FINAL_ACTIVITY_CLEAR_ATTEMPTS = 3
+FINAL_ACTIVITY_CLEAR_RETRY_SECONDS = 60
 
 
 def log(message: str) -> None:
@@ -424,6 +428,27 @@ def deliver_activity_updates(repo: str, github_token: str, ha_token: str,
             last_sent = float(old.get("last_final_sent_at", finished_at))
             attempts = int(old.get("final_sent_count", 1))
             final_payload = old.get("final_payload")
+            clears = int(old.get("clear_sent_count", 0))
+            # After the first clear, NEVER send a Live Activity update again.
+            # That could recreate an activity iOS has already removed.
+            if clears:
+                last_clear = float(old.get("last_clear_sent_at", finished_at))
+                if now - last_clear < FINAL_ACTIVITY_CLEAR_RETRY_SECONDS:
+                    continue
+                if clears >= FINAL_ACTIVITY_CLEAR_ATTEMPTS:
+                    # Wait one additional poll after the last clear so state
+                    # survives restart and no later update is emitted.
+                    del activities[run_id]
+                    log(f"{repo}: finished Live Activity cleanup for "
+                        f"{service} run {run_id} ({clears} clears requested)")
+                else:
+                    notify(service, ha_token, clear_payload(repo, int(run_id)))
+                    old["clear_sent_count"] = clears + 1
+                    old["last_clear_sent_at"] = now
+                    log(f"{repo}: clear {clears + 1}/"
+                        f"{FINAL_ACTIVITY_CLEAR_ATTEMPTS} submitted to "
+                        f"{service} for run {run_id}")
+                continue
             if (attempts < FINAL_ACTIVITY_UPDATES
                     and now - last_sent >= FINAL_ACTIVITY_RETRY_SECONDS
                     and isinstance(final_payload, dict)):
@@ -432,21 +457,33 @@ def deliver_activity_updates(repo: str, github_token: str, ha_token: str,
                 old["last_final_sent_at"] = now
                 log(f"{repo}: completion update {attempts + 1}/"
                     f"{FINAL_ACTIVITY_UPDATES} submitted to {service} for run {run_id}")
-            elif ((attempts >= FINAL_ACTIVITY_UPDATES
-                   and now - last_sent >= FINAL_ACTIVITY_RETRY_SECONDS
-                   and now - finished_at >= FINAL_ACTIVITY_MIN_VISIBLE_SECONDS)
-                  or (not isinstance(final_payload, dict)
-                      and now - finished_at >= FINAL_ACTIVITY_MIN_VISIBLE_SECONDS)):
-                # Older persisted activities may not include final_payload.
+            elif (now - finished_at >= FINAL_ACTIVITY_MIN_VISIBLE_SECONDS
+                  and (not isinstance(final_payload, dict)
+                       or (attempts >= FINAL_ACTIVITY_UPDATES
+                           and now - last_sent >= FINAL_ACTIVITY_CLEAR_GRACE_SECONDS))):
+                # Upgrade-compatible: v0.2.2 stored no clear counters.
+                # Retry until several clear pushes have been accepted by HA.
                 notify(service, ha_token, clear_payload(repo, int(run_id)))
-                del activities[run_id]
+                old["clear_sent_count"] = 1
+                old["last_clear_sent_at"] = now
+                # Never resend the final payload after starting to clear.
+                old.pop("final_payload", None)
+                log(f"{repo}: clear 1/{FINAL_ACTIVITY_CLEAR_ATTEMPTS} "
+                    f"submitted to {service} for run {run_id}")
             continue
         run = recent_by_id.get(int(run_id))
         if run is not None and is_active(run, now):
             continue
         if run is None:
+            # GitHub pagination may drop an older run before the phone's
+            # Live Activity is removed. Retry its clear across poll cycles.
             notify(service, ha_token, clear_payload(repo, int(run_id)))
-            del activities[run_id]
+            old.update({"finished_at": now - FINAL_ACTIVITY_MIN_VISIBLE_SECONDS,
+                        "last_final_sent_at": now - FINAL_ACTIVITY_CLEAR_GRACE_SECONDS,
+                        "final_sent_count": FINAL_ACTIVITY_UPDATES,
+                        "clear_sent_count": 1, "last_clear_sent_at": now})
+            old.pop("final_payload", None)
+            log(f"{repo}: first orphan clear submitted to {service} for run {run_id}")
             continue
         rid = int(run_id)
         if rid not in results:
@@ -457,12 +494,16 @@ def deliver_activity_updates(repo: str, github_token: str, ha_token: str,
         final_payload = activity_payload(run, results[rid], repo,
                                          display_name(repo, config.get("repository_aliases")), now)
         notify(service, ha_token, final_payload)
-        # First terminal push is full priority. Retries can be quiet so
-        # they do not produce repeated sounds/vibrations on the phone.
-        quiet_retry = {**final_payload,
-                       "data": {**final_payload["data"], "alert_once": True}}
+        # Keep retry delivery priority high without replaying a sound.
+        # 'alert_once: true' lowers APNs priority and may let completion
+        # pushes arrive after the clear, effectively reviving the activity.
+        silent_high_priority_retry = {
+            **final_payload,
+            "data": {**final_payload["data"], "alert_once": False,
+                     "push": {"sound": "none"}},
+        }
         old.update({"finished_at": now, "last_final_sent_at": now,
-                    "final_sent_count": 1, "final_payload": quiet_retry})
+                    "final_sent_count": 1, "final_payload": silent_high_priority_retry})
         log(f"{repo}: completion update 1/{FINAL_ACTIVITY_UPDATES} submitted "
             f"to {service} for run {run_id}")
 
