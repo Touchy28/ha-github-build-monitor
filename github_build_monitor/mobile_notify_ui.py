@@ -88,7 +88,7 @@ def selector_html(service: str, services: list[str] | None, csrf: str,
             '<button type="submit" class="neutral">Zur HA-App-Konfiguration zurückkehren'
             '</button></form>'
         )
-    else:
+    if services:
         if current and current not in services:
             body.append(
                 '<p class="warning">Der bisherige Dienst ist aktuell nicht in der '
