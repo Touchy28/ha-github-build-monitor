@@ -2,7 +2,7 @@
 
 A standalone **read-only GitHub Actions monitor** for Home Assistant with native HA sensors, estimated build progress and iPhone Live Activities / Android Live Updates. No runner registration or Docker socket permissions.
 
-> **Version 0.1.7**. GitHub-hosted Home Assistant app with read-only monitoring, repository picker and compact timing dashboard. Stop the previous local app if you have not already done so.
+> **Version 0.1.8**. GitHub-hosted Home Assistant app with read-only monitoring, repository picker and compact timing dashboard. Stop the previous local app if you have not already done so.
 
 ## Capabilities
 
@@ -51,6 +51,36 @@ For a new installation on Home Assistant OS / Supervisor:
 Die Webansicht vereint Repository-Auswahl, Einstellungen-Übersicht und Lernstatistik. Die Statistik ist von Beginn an eingeklappt: **Repository → Workflow → Gesamtzeiten / Runner / Job → Schrittzeiten**. Jede Ebene lässt sich unabhängig öffnen.
 
 **Einschränkung der Home-Assistant-Oberfläche:** Die native **Konfiguration**-Registerkarte lässt sich von einer App nicht auf ihre eigene Ingress-Webansicht umleiten. Die Tokens und Basisoptionen verbleiben daher in der normalen HA-Konfiguration; die Weboberfläche zeigt deren Status sowie einen Link zurück zur App-Übersicht. Das vermeidet zusätzliche Supervisor-Rechte und hält bestehende Einstellungen kompatibel.
+
+### Mehrere Live-Aktivitätsgeräte und Anzeigenamen (ab v0.1.8)
+
+In der Weboberfläche unter **Einstellungen → Geräte für Live-Aktivitäten**
+zeigt die App die per Home Assistant API erkannten Companion-App-Geräte.
+Statt eines einzigen Dropdowns gibt es **Checkboxen für mehrere Geräte**,
+beispielsweise das eigene iPhone und ein Familien-iPad. Nach **Geräteauswahl speichern**
+erhalten **alle ausgewählten Geräte** eigene Live-Aktivitäts-Updates sowie
+zugehörige Abschluss- und Löschmeldungen. Die Fortschrittsstände werden
+für jedes Gerät getrennt gespeichert.
+
+Technische IDs werden automatisch lesbarer dargestellt, etwa
+`mobile_app_iphone_von_matthias` als **iPhone von Matthias**.
+Daneben kann jedem registrierten Dienst ein **individueller Anzeigename**
+gegeben werden (maximal 48 Zeichen). Anzeigenamen ändern ausschließlich
+die Anzeige in der HA-App-Weboberfläche; technische Services und Tokens
+bleiben unverändert.
+
+- Bisher gewähltes Gerät wird beim Update übernommen und bleibt aktiviert.
+- Beim Abwählen wird nur die betroffene Live-Aktivität entfernt, auf anderen
+  Geräten läuft die Überwachung unbeeinträchtigt weiter.
+- Bei einem HA-Push-Fehler wird die Bereinigung beim nächsten Poll versucht,
+  bevor der alte Gerätestatus verworfen wird.
+- Leere Auswahl bedeutet keine Benachrichtigungsgeräte, **nicht** das Löschen
+  von Repositories, GitHub-Zugängen oder Lernstatistiken.
+- Die Entscheidung wird lokal unter `/data/selected_mobile_notify_service.json`
+  gespeichert. Vorhandene Einzelgeräte-Dateien aus v0.1.7 werden automatisch
+  erkannt; die Supervisor-eigenen Optionen werden nicht überschrieben.
+- **Wert aus HA-App-Konfiguration verwenden** reaktiviert das bisherige
+  Einzelgerät aus den ursprünglichen HA-App-Einstellungen.
 
 ### iPhone-Zielgerät auswählen (ab v0.1.7)
 
