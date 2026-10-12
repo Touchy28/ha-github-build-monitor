@@ -104,13 +104,13 @@ class ProgressTests(unittest.TestCase):
         self.assertFalse(history)
         self.assertTrue(core.learn(REPO, sample_run("completed", "success"), jobs, history))
         self.assertFalse(core.learn(REPO, sample_run("completed", "success"), jobs, history))
-        key = core.history_key(REPO, jobs[0], jobs[0]["steps"][0])
+        key = core.history_key(REPO, jobs[0], jobs[0]["steps"][0], "Build")
         self.assertEqual(history["steps"][key], [60.0])
 
     def test_historical_eta_requires_multiple_observations(self):
         job = sample_job()
-        key1 = core.history_key(REPO, job, job["steps"][0])
-        key2 = core.history_key(REPO, job, job["steps"][1])
+        key1 = core.history_key(REPO, job, job["steps"][0], "Build")
+        key2 = core.history_key(REPO, job, job["steps"][1], "Build")
         history = {"steps": {key1: [60, 55], key2: [120, 110]}}
         result = core.snapshot(REPO, sample_run(), [job], history,
                                now=core.timestamp("2023-11-14T22:13:20Z"))
