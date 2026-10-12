@@ -80,6 +80,42 @@ class RunIdentityTests(unittest.TestCase):
         self.assertIn("Restzeit –", payloads[0]["message"])
         self.assertIn("Switch prototype #94", payloads[1]["title"])
 
+    def test_old_eta_header_is_retired_before_new_static_header_starts(self):
+        current = state()
+        old = {"42": {"percent": 35, "step": "Old step",
+                      "title": "B&B · CI #1055 · ≈–/5m",
+                      "sent_at": 1791800010}}
+        current["activity_targets"] = {PHONE: {REPO: old}}
+        with mock.patch.object(monitor, "runs_for", return_value=[run(42, 1055)]), \
+             mock.patch.object(monitor, "jobs_for", return_value=[]), \
+             mock.patch.object(monitor, "set_sensor"), \
+             mock.patch.object(monitor, "notify") as notify:
+            monitor.monitor_repository(REPO, "", "TOKEN", config(), current, {}, 1791800050)
+            self.assertEqual(notify.call_count, 1)
+            self.assertEqual(notify.call_args.args[2]["message"], "clear_notification")
+            self.assertFalse(old)
+            monitor.monitor_repository(REPO, "", "TOKEN", config(), current, {}, 1791800110)
+            self.assertEqual(notify.call_count, 2)
+            self.assertEqual(notify.call_args.args[2]["title"], "B&B · CI #1055")
+            self.assertIn("Restzeit –", notify.call_args.args[2]["message"])
+
+    def test_title_stays_same_when_ETA_and_status_change(self):
+        running = run(42, 1055)
+        done = run(42, 1055, status="completed", conclusion="success")
+        early = monitor.activity_payload(running,
+                  {"progress_percent": 30, "estimated_remaining_seconds": 600},
+                  REPO, "B&B")
+        late = monitor.activity_payload(running,
+                  {"progress_percent": 95, "estimated_remaining_seconds": 30},
+                  REPO, "B&B")
+        final = monitor.activity_payload(done,
+                  {"progress_percent": 100}, REPO, "B&B")
+        self.assertEqual(early["title"], late["title"])
+        self.assertEqual(early["title"], final["title"])
+        self.assertNotEqual(early["message"], late["message"])
+        self.assertTrue(final["message"].startswith("✓"))
+        self.assertFalse(final["data"]["alert_once"])
+
     def test_successful_primary_run_has_no_active_details(self):
         current = state()
         with mock.patch.object(monitor, "runs_for",
