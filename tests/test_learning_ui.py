@@ -468,7 +468,7 @@ class WebTests(unittest.TestCase):
                              b"\x89PNG\r\n\x1a\n")
         configuration = (folder / "config.yaml").read_text()
         self.assertIn('panel_icon: mdi:github', configuration)
-        self.assertRegex(configuration, r'(?m)^version: "\d+\.\d+\.\d+"
+        self.assertRegex(configuration, r'(?m)^version: "[0-9]+[.][0-9]+[.][0-9]+"')
 
     def test_post_queues_and_monitor_applies(self):
         with self.post() as response:
