@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1 — 2026-10-12 (candidate)
+
+- Distinguish parallel GitHub workflow runs in iOS titles using the workflow name and GitHub run number (e.g. `B&B · CI #1055 · ≈–/5m`). Keep repository aliases, compact ETA and unique per-run tags.
+- Expose `primary_run_id` and `active_run_details` (up to six simultaneously active workflow runs, including their own status, progress, runner and URL) on the existing Home Assistant repository sensor without changing its entity ID.
+- Submit the final 100% success/failure status to HA three times, spaced by at least 60 seconds, and keep the Live Activity for at least three minutes before clearing it. Per-device retry state survives restarts; failure to submit does not consume a retry.
+- Guard against GitHub reruns reusing the same run ID, and retire activities persisted by older monitor versions.
+- Note: an HA service response acknowledges the request but cannot prove the iPhone displayed the push notification.
+
+
 ## 0.2.0 — 2026-10-12
 
 - Show remaining time for the **current running step / entire remaining workflow** (e.g. `B&B · ≈1/12m`), not elapsed time.
