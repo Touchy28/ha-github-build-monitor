@@ -349,12 +349,9 @@ def main() -> None:
             try:
                 monitor_repository(repo, token, ha_token, config, state, history, now)
             except (ValueError, RuntimeError, OSError, KeyError, TypeError) as exc:
-                log(f"{repo}: {exc}")
-                try:
-                    set_sensor(repo, {"repository": repo, "state": "unavailable",
-                                      "error": str(exc)}, ha_token)
-                except Exception:
-                    pass
+                # Keep the last sensor and Live Activity on transient API failures,
+                # as the working v0.1.0 did. Never fabricate a workflow failure.
+                log(f"{repo}: {type(exc).__name__}: {exc}")
             finally:
                 write_json(state_file, state)
                 write_json(history_file, history)
