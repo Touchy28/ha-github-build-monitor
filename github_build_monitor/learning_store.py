@@ -112,3 +112,42 @@ def reset_description(history: dict, repo: str) -> str:
     if not cutoff:
         return ""
     return datetime.fromtimestamp(cutoff, tz=timezone.utc).strftime("%d.%m.%Y %H:%M UTC")
+
+
+
+def step_breakdown(history: dict, repo: str, workflow_name: str,
+                   max_steps: int = 180) -> list[dict]:
+    """Group historical timings by job and step under a named workflow.
+
+    Keys are repo \\x1f workflow-name \\x1f job-name \\x1f step-name.
+    Do not expose raw stored JSON in the web UI; cap rows for large builds.
+    """
+    grouped: dict[str, list[dict]] = {}
+    rows = 0
+    for key, samples in (history.get("steps") or {}).items():
+        if not isinstance(key, str) or not isinstance(samples, list):
+            continue
+        parts = key.split("\x1f")
+        if len(parts) != 4:
+            continue
+        rname, workflow, job, step = parts
+        if rname.casefold() != repo.casefold() or workflow.casefold() != workflow_name.casefold():
+            continue
+        values = sorted(float(n) for n in samples
+                        if isinstance(n, (int, float)) and 0 < n <= 21600)
+        if not values:
+            continue
+        grouped.setdefault(job or "Unbenannter Job", []).append({
+            "name": step or "Unbenannter Schritt",
+            "samples": len(values),
+            "median_seconds": round(median(values)),
+            "min_seconds": round(min(values)),
+            "max_seconds": round(max(values)),
+        })
+        rows += 1
+        if rows >= max(1, max_steps):
+            break
+    return [
+        {"job": job, "steps": sorted(grouped[job], key=lambda item: item["name"].casefold())}
+        for job in sorted(grouped, key=str.casefold)
+    ]
