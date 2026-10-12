@@ -121,6 +121,17 @@ class WebTests(unittest.TestCase):
             "repositories": [REPO, DSO],
         }))
         (self.root / "monitor_history.json").write_text(json.dumps(history()))
+        self.github_repos = [
+            {"full_name": REPO, "private": False,
+             "description": "Bäume & Bienen", "archived": False},
+            {"full_name": DSO, "private": True,
+             "description": "DSO Optimizer", "archived": False},
+            {"full_name": "Touchy28/new-project", "private": False,
+             "description": "", "archived": False},
+        ]
+        self.github_fetch = mock.patch("repo_selection_ui.discover",
+                                       return_value=self.github_repos)
+        self.github_fetch.start()
         self.server = learning_ui.start(self.root, port=0, host="127.0.0.1",
                                         allowed_peers={"127.0.0.1"})
         self.url = "http://127.0.0.1:" + str(self.server.server_address[1]) + "/"
@@ -128,6 +139,7 @@ class WebTests(unittest.TestCase):
     def tearDown(self):
         self.server.shutdown()
         self.server.server_close()
+        self.github_fetch.stop()
         self.temp.cleanup()
 
     def test_secure_html_without_token(self):
@@ -147,6 +159,81 @@ class WebTests(unittest.TestCase):
         req = Request(self.url + "reset", data=body, method="POST",
                       headers={"Content-Type": "application/x-www-form-urlencoded"})
         return urlopen(req, timeout=4)
+
+    def test_token_based_repo_selection_persists(self):
+        with urlopen(self.url, timeout=4) as response:
+            html = response.read().decode("utf-8")
+        self.assertIn('name="repository" value="' + REPO + '" checked', html)
+        self.assertIn("Touchy28/new-project", html)
+        self.assertNotIn("SECRET_DO_NOT_SHOW", html)
+        values = urlencode({
+            "csrf": self.server.csrf,
+            "repository": "Touchy28/new-project",
+        }).encode("utf-8")
+        request = Request(
+            self.url + "repositories", data=values, method="POST",
+            headers={"Content-Type": "application/x-www-form-urlencoded"})
+        with urlopen(request, timeout=4) as result:
+            self.assertEqual(result.status, 200)
+        from repo_selection import effective_repositories
+        options = json.loads((self.root / "options.json").read_text())
+        self.assertEqual(effective_repositories(options, self.root),
+                         ["Touchy28/new-project"])
+        self.assertEqual(options["repositories"], [REPO, DSO])
+        self.assertEqual(options["github_api_token"], "SECRET_DO_NOT_SHOW")
+
+    def test_can_uncheck_all_monitored_repositories(self):
+        with urlopen(self.url, timeout=4):
+            pass
+        data = urlencode({"csrf": self.server.csrf}).encode("utf-8")
+        request = Request(self.url + "repositories", data=data, method="POST",
+                          headers={"Content-Type": "application/x-www-form-urlencoded"})
+        with urlopen(request, timeout=4):
+            pass
+        from repo_selection import effective_repositories
+        config = json.loads((self.root / "options.json").read_text())
+        self.assertEqual(effective_repositories(config, self.root), [])
+        with urlopen(self.url, timeout=4) as response:
+            html = response.read().decode("utf-8")
+        self.assertIn("kein Repository zur Überwachung", html)
+
+    def test_selection_rejects_repo_not_authorized_by_token(self):
+        with urlopen(self.url, timeout=4):
+            pass
+        data = urlencode({"csrf": self.server.csrf,
+                          "repository": "Unlisted/private"}).encode("utf-8")
+        request = Request(self.url + "repositories", data=data, method="POST",
+                          headers={"Content-Type": "application/x-www-form-urlencoded"})
+        with self.assertRaises(HTTPError) as error:
+            urlopen(request, timeout=4)
+        self.assertEqual(error.exception.code, 400)
+        self.assertFalse((self.root / "monitored_repositories.json").exists())
+
+    def test_selection_requires_repository_list_for_current_token(self):
+        data = urlencode({"csrf": self.server.csrf,
+                          "repository": REPO}).encode("utf-8")
+        request = Request(self.url + "repositories", data=data, method="POST",
+                          headers={"Content-Type": "application/x-www-form-urlencoded"})
+        with self.assertRaises(HTTPError) as error:
+            urlopen(request, timeout=4)
+        self.assertEqual(error.exception.code, 409)
+
+    def test_selection_rejects_csrf(self):
+        with urlopen(self.url, timeout=4):
+            pass
+        data = urlencode({"csrf": "invalid", "repository": REPO}).encode("utf-8")
+        request = Request(self.url + "repositories", data=data, method="POST",
+                          headers={"Content-Type": "application/x-www-form-urlencoded"})
+        with self.assertRaises(HTTPError) as error:
+            urlopen(request, timeout=4)
+        self.assertEqual(error.exception.code, 403)
+
+    def test_selection_refreshes_from_github_when_requested(self):
+        with urlopen(self.url, timeout=4):
+            pass
+        with urlopen(self.url + "?refresh=1", timeout=4):
+            pass
+        self.assertEqual(self.github_fetch.call_count, 2)
 
     def test_post_queues_and_monitor_applies(self):
         with self.post() as response:
