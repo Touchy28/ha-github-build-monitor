@@ -385,8 +385,12 @@ def main() -> None:
     state = read_json(state_file, {})
     history = read_json(history_file, {})
     history = migrate_history(DATA_DIR, history)
-    start_learning_ui(DATA_DIR)
-    log("Learning dashboard active via Home Assistant Ingress")
+    try:
+        start_learning_ui(DATA_DIR)
+        log("Learning dashboard active via Home Assistant Ingress")
+    except OSError as exc:
+        # Learning UI must never disable the build monitor if its port is unavailable.
+        log(f"Learning dashboard could not start; monitoring continues: {exc}")
     while True:
         # Apply changes before polling so old GitHub runs are not learned again.
         apply_pending_learning_reset(DATA_DIR, history)
